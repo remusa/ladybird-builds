@@ -1,0 +1,95 @@
+name: Build Ladybird (macOS arm64 nightly)
+
+on:
+  schedule:
+    # Every Sunday at 06:00 UTC. Adjust cadence as upstream churn dictates.
+    - cron: "0 6 * * 0"
+  workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
+
+permissions:
+  contents: write   # needed to create releases
+
+env:
+  LADYBIRD_REPO: LadybirdBrowser/ladybird
+  LADYBIRD_REF: master
+
+jobs:
+  build:
+    runs-on: macos-15   # Apple Silicon (arm64) by default on GitHub-hosted runners
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout Ladybird source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.LADYBIRD_REPO }}
+          ref: ${{ env.LADYBIRD_REF }}
+          fetch-depth: 1
+          path: ladybird
+
+      - name: Record source commit
+        id: rev
+        run: |
+          cd ladybird
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies (Homebrew)
+        run: |
+          brew install autoconf autoconf-archive automake ccache cmake \
+            libtool nasm ninja pkg-config llvm@21
+          # Qt6 only needed if you want the Qt UI instead of the native AppKit chrome.
+          # brew install qt@6
+
+      - name: Configure ccache
+        run: |
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/.ccache"
+
+      - name: Cache ccache + vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            ladybird/Build/vcpkg/buildtrees
+            ladybird/Build/vcpkg/downloads
+          # Bust the cache whenever vcpkg's manifest changes upstream.
+          key: ladybird-macos-arm64-${{ hashFiles('ladybird/vcpkg.json', 'ladybird/vcpkg-configuration.json') }}
+          restore-keys: |
+            ladybird-macos-arm64-
+
+      - name: Build Ladybird
+        working-directory: ladybird
+        env:
+          PATH: /opt/homebrew/opt/llvm@21/bin:${{ env.PATH }}
+        run: |
+          # ladybird.py drives the CMake+vcpkg+ninja build end to end.
+          # Check Documentation/BuildInstructionsLadybird.md in the source tree
+          # if this invocation drifts from upstream's current expectations.
+          ./Meta/ladybird.py build
+
+      - name: Locate and zip the .app bundle
+        working-directory: ladybird
+        run: |
+          APP_PATH=$(find Build -maxdepth 4 -name "Ladybird.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::Could not find Ladybird.app in Build/ output"
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$APP_PATH" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
+
+      - name: Publish nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ steps.rev.outputs.date }}
+          name: "Ladybird nightly ${{ steps.rev.outputs.date }} (${{ steps.rev.outputs.sha }})"
+          body: |
+            Unofficial arm64 macOS build of Ladybird, built from
+            ${{ env.LADYBIRD_REPO }}@${{ steps.rev.outputs.sha }}.
+
+            Not an official release. Gatekeeper will quarantine this app;
+            see this repo's README for how to run it.
+          files: dist/Ladybird-macos-arm64.zip
+          make_latest: true
