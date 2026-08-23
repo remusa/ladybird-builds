@@ -73,18 +73,30 @@ jobs:
             echo "::error::Could not find Ladybird.app in Build/ output"
             exit 1
           fi
-          # Resolve symlinks so the zip contains real files instead of
-          # dangling paths that point at the CI runner's filesystem.
+          # Contents/lib is a symlink into the build tree — replace it
+          # with a real directory containing all libraries the binary needs.
+          LIB_DIR="$APP_PATH/Contents/lib"
+          BUILD_LIB="$(readlink -f "$LIB_DIR")"
+          VCPKG_LIB="$(find Build -path "*/vcpkg_installed/*/lib" -type d -print -quit)"
+          rm "$LIB_DIR"
+          mkdir -p "$LIB_DIR"
+          # Copy lagom libraries from the build tree
+          cp -a "$BUILD_LIB"/* "$LIB_DIR"/ 2>/dev/null || true
+          # Copy vcpkg-installed libraries (skia, ssl, freetype, etc.)
+          if [ -n "$VCPKG_LIB" ]; then
+            cp -a "$VCPKG_LIB"/* "$LIB_DIR"/ 2>/dev/null || true
+          fi
+          # Resolve remaining symlinks inside the bundle
           while IFS= read -r -d '' link; do
             target=$(readlink "$link")
             rm "$link"
-            cp -a "$target" "$link"
+            cp -a "$target" "$link" 2>/dev/null || rm "$link"
           done < <(find "$APP_PATH" -type l -print0)
           # Rewrite hardcoded CI rpaths so dyld can find libraries at
           # install time.  All binaries live in Contents/MacOS and all
           # libraries in Contents/lib, so @executable_path/../lib works
           # for every executable.
-          find "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/lib" -type f \
+          find "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/lib" "$APP_PATH/Contents/Frameworks" -type f \
             -exec file {} + | grep 'Mach-O' | cut -d: -f1 | while read -r bin; do
             # Remove CI-runner rpaths
             otool -l "$bin" 2>/dev/null \
@@ -93,15 +105,19 @@ jobs:
               | while read -r old; do
                 install_name_tool -delete_rpath "$old" "$bin" 2>/dev/null || true
               done
-            # Add portable rpath for Contents/lib
+            # Add portable rpaths
             install_name_tool -add_rpath @executable_path/../lib "$bin" 2>/dev/null || true
-            # For dylibs inside Contents/lib, also add @loader_path
+            install_name_tool -add_rpath @executable_path/../Frameworks "$bin" 2>/dev/null || true
             case "$bin" in
-              */Contents/lib/*)
+              */Contents/lib/*|*/Contents/Frameworks/*)
                 install_name_tool -add_rpath @loader_path "$bin" 2>/dev/null || true
+                install_name_tool -add_rpath @loader_path/.. "$bin" 2>/dev/null || true
                 ;;
             esac
           done
+          # Re-sign the bundle — install_name_tool invalidates the
+          # existing signature and macOS will kill unsigned binaries.
+          codesign --force --deep --sign - "$APP_PATH"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           ditto -c -k --sequesterRsrc --keepParent \
             "$APP_PATH" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
