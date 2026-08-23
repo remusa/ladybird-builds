@@ -77,6 +77,13 @@ jobs:
             echo "::error::Could not find Ladybird.app in Build/ output"
             exit 1
           fi
+          # Resolve symlinks so the zip contains real files instead of
+          # dangling paths that point at the CI runner's filesystem.
+          while IFS= read -r -d '' link; do
+            target=$(readlink "$link")
+            rm "$link"
+            cp -a "$target" "$link"
+          done < <(find "$APP_PATH" -type l -print0)
           mkdir -p "$GITHUB_WORKSPACE/dist"
           ditto -c -k --sequesterRsrc --keepParent \
             "$APP_PATH" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
