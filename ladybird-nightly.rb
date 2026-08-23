@@ -2,7 +2,7 @@ cask 'ladybird-nightly' do
   version :latest
   sha256 :no_check # unsigned nightly builds; content changes every release
 
-  url 'https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/latest/download/Ladybird-macos-arm64.zip'
+  url 'https://github.com/remusa/ladybird-builds/releases/latest/download/Ladybird-macos-arm64.zip'
   name 'Ladybird (nightly, unofficial)'
   desc 'Unofficial nightly arm64 build of the Ladybird browser'
   homepage 'https://ladybird.org'
@@ -23,6 +23,6 @@ cask 'ladybird-nightly' do
     This is an unofficial, unsigned nightly build of Ladybird, built from
     source in CI. It is pre-alpha software — expect crashes and missing
     features. See:
-      https://github.com/YOUR_GH_USERNAME/ladybird-builds
+      https://github.com/remusa/ladybird-builds
   EOS
 end
