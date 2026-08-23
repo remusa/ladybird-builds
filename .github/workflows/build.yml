@@ -24,7 +24,7 @@ jobs:
         with:
           repository: ${{ env.LADYBIRD_REPO }}
           ref: ${{ env.LADYBIRD_REF }}
-          fetch-depth: 1
+          fetch-depth: 0
           path: ladybird
 
       - name: Record source commit
