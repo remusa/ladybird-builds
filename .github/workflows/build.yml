@@ -90,7 +90,9 @@ jobs:
           while IFS= read -r -d '' link; do
             target=$(readlink "$link")
             rm "$link"
-            cp -a "$target" "$link" 2>/dev/null || rm "$link"
+            if [ -e "$target" ] || [ -L "$target" ]; then
+              cp -a "$target" "$link" 2>/dev/null || true
+            fi
           done < <(find "$APP_PATH" -type l -print0)
           # Rewrite hardcoded CI rpaths so dyld can find libraries at
           # install time.  All binaries live in Contents/MacOS and all
