@@ -1,0 +1,59 @@
+[tools]
+actionlint = "1.7.12"
+shfmt = "3.13.1"
+# nixfmt is managed by Nix (nixpkgs), not mise — available on PATH.
+# Install markdownlint-cli and rubocop via npm (see tasks below).
+
+[tasks.lint]
+description = "Run all linters"
+run = """
+mise run lint:yaml
+mise run lint:nix
+mise run lint:ruby
+mise run lint:markdown
+"""
+
+[tasks."lint:yaml"]
+description = "Lint GitHub Actions workflows with actionlint"
+run = "actionlint .github/workflows/*.yml"
+
+[tasks."lint:nix"]
+description = "Check Nix formatting with nixfmt"
+run = "nixfmt --check flake.nix"
+
+[tasks."lint:ruby"]
+description = "Lint Ruby files with rubocop"
+run = "rubocop ladybird-nightly.rb"
+
+[tasks."lint:markdown"]
+description = "Lint Markdown with markdownlint"
+run = "markdownlint '*.md'"
+
+[tasks.fmt]
+description = "Auto-fix formatting everywhere"
+run = """
+mise run fmt:nix
+mise run fmt:ruby
+mise run fmt:markdown
+mise run fmt:shell
+"""
+
+[tasks."fmt:nix"]
+description = "Format Nix files with nixfmt"
+run = "nixfmt flake.nix"
+
+[tasks."fmt:ruby"]
+description = "Auto-correct Ruby style issues"
+run = "rubocop --autocorrect ladybird-nightly.rb"
+
+[tasks."fmt:markdown"]
+description = "Fix Markdown formatting"
+run = "markdownlint --fix '*.md'"
+
+[tasks."fmt:shell"]
+description = "Format shell scripts with shfmt"
+run = "shfmt -w -i 2 -bn -ci ."
+
+[tasks.check]
+description = "Lint + format check (CI-friendly, no writes)"
+run = "mise run lint"
