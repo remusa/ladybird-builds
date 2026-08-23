@@ -23,7 +23,7 @@
         inherit version;
 
         src = pkgs.fetchurl {
-          url = "https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/download/nightly-${version}/Ladybird-macos-arm64.zip";
+          url = "https://github.com/remusa/ladybird-builds/releases/download/nightly-${version}/Ladybird-macos-arm64.zip";
           inherit sha256;
         };
 

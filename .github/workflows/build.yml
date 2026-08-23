@@ -37,7 +37,7 @@ jobs:
       - name: Install build dependencies (Homebrew)
         run: |
           brew install autoconf autoconf-archive automake ccache cmake \
-            libtool nasm ninja pkg-config llvm@21
+            libtool nasm ninja pkg-config rust llvm@21
           # Qt6 only needed if you want the Qt UI instead of the native AppKit chrome.
           # brew install qt@6
 
@@ -60,12 +60,13 @@ jobs:
 
       - name: Build Ladybird
         working-directory: ladybird
-        env:
-          PATH: /opt/homebrew/opt/llvm@21/bin:${{ env.PATH }}
         run: |
           # ladybird.py drives the CMake+vcpkg+ninja build end to end.
           # Check Documentation/BuildInstructionsLadybird.md in the source tree
           # if this invocation drifts from upstream's current expectations.
+          export PATH="/opt/homebrew/opt/llvm@21/bin:$PATH"
+          CC="$(brew --prefix llvm@21)/bin/clang" \
+          CXX="$(brew --prefix llvm@21)/bin/clang++" \
           ./Meta/ladybird.py build
 
       - name: Locate and zip the .app bundle
