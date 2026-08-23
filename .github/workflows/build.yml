@@ -46,17 +46,13 @@ jobs:
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
 
-      - name: Cache ccache + vcpkg
+      - name: Cache ccache
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.ccache
-            ladybird/Build/vcpkg/buildtrees
-            ladybird/Build/vcpkg/downloads
-          # Bust the cache whenever vcpkg's manifest changes upstream.
-          key: ladybird-macos-arm64-${{ hashFiles('ladybird/vcpkg.json', 'ladybird/vcpkg-configuration.json') }}
+          path: ~/.ccache
+          key: ladybird-macos-arm64-ccache-${{ hashFiles('ladybird/vcpkg.json', 'ladybird/vcpkg-configuration.json') }}
           restore-keys: |
-            ladybird-macos-arm64-
+            ladybird-macos-arm64-ccache-
 
       - name: Build Ladybird
         working-directory: ladybird
