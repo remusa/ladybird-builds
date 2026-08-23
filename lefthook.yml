@@ -1,0 +1,39 @@
+pre-commit:
+  parallel: true
+  commands:
+    yaml:
+      run: mise run lint:yaml
+    nix:
+      run: mise run lint:nix
+    ruby:
+      glob: "*.rb"
+      run: mise run lint:ruby
+    markdown:
+      glob: "*.md"
+      run: mise run lint:markdown
+    EditorConfig:
+      glob: "*.{yml,yaml,nix,rb,md,toml}"
+      run: |
+        if ! mise run fmt:shell 2>/dev/null; then
+          echo "shfmt: no shell files to format"
+        fi
+
+commit-msg:
+  commands:
+    conventional-commits:
+      run: |
+        if [ -f ".git/COMMIT_EDITMSG" ]; then
+          MSG=$(cat .git/COMMIT_EDITMSG)
+        elif [ -f ".git/msg" ]; then
+          MSG=$(cat .git/msg)
+        else
+          MSG=""
+        fi
+        if ! echo "$MSG" | grep -qE '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.+\))?!?:'; then
+          echo "Error: Commit message does not follow"
+          echo "conventional commits format."
+          echo "Expected: <type>(<scope>)?<!>?: <description>"
+          echo "Types: build, chore, ci, docs, feat, fix, perf,"
+          echo "refactor, revert, style, test"
+          exit 1
+        fi

@@ -1,8 +1,9 @@
 [tools]
 actionlint = "1.7.12"
+lefthook = "2.1.11"
 shfmt = "3.13.1"
 # nixfmt is managed by Nix (nixpkgs), not mise — available on PATH.
-# Install markdownlint-cli and rubocop via npm (see tasks below).
+# Install markdownlint-cli and rubocop via npm.
 
 [tasks.lint]
 description = "Run all linters"
