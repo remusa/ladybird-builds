@@ -65,7 +65,7 @@ jobs:
           CXX="$(brew --prefix llvm@21)/bin/clang++" \
           ./Meta/ladybird.py build
 
-      - name: Locate and zip the .app bundle
+      - name: Locate, fix, and zip the .app bundle
         working-directory: ladybird
         run: |
           APP_PATH=$(find Build -maxdepth 4 -name "Ladybird.app" -print -quit)
@@ -80,6 +80,28 @@ jobs:
             rm "$link"
             cp -a "$target" "$link"
           done < <(find "$APP_PATH" -type l -print0)
+          # Rewrite hardcoded CI rpaths so dyld can find libraries at
+          # install time.  All binaries live in Contents/MacOS and all
+          # libraries in Contents/lib, so @executable_path/../lib works
+          # for every executable.
+          find "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/lib" -type f \
+            -exec file {} + | grep 'Mach-O' | cut -d: -f1 | while read -r bin; do
+            # Remove CI-runner rpaths
+            otool -l "$bin" 2>/dev/null \
+              | awk '/^ *path /{print $2}' \
+              | grep -E '^/' \
+              | while read -r old; do
+                install_name_tool -delete_rpath "$old" "$bin" 2>/dev/null || true
+              done
+            # Add portable rpath for Contents/lib
+            install_name_tool -add_rpath @executable_path/../lib "$bin" 2>/dev/null || true
+            # For dylibs inside Contents/lib, also add @loader_path
+            case "$bin" in
+              */Contents/lib/*)
+                install_name_tool -add_rpath @loader_path "$bin" 2>/dev/null || true
+                ;;
+            esac
+          done
           mkdir -p "$GITHUB_WORKSPACE/dist"
           ditto -c -k --sequesterRsrc --keepParent \
             "$APP_PATH" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
