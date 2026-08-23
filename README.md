@@ -43,7 +43,7 @@ repo's `releases/latest`.
 You'll need to bump `version` and `sha256` in `flake.nix` after each
 release you want to pin to — get the hash with:
 
-```
+```sh
 nix-prefetch-url --unpack \
   https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/download/nightly-YYYY-MM-DD/Ladybird-macos-arm64.zip
 ```
@@ -56,7 +56,7 @@ nix-prefetch-url --unpack \
 These builds are not code-signed or notarized (no Apple Developer account
 in this pipeline). macOS will refuse to open the app normally. Either:
 
-```
+```sh
 xattr -d com.apple.quarantine /Applications/Ladybird.app
 ```
 

@@ -1,22 +1,22 @@
-cask "ladybird-nightly" do
+cask 'ladybird-nightly' do
   version :latest
-  sha256 :no_check   # unsigned nightly builds; content changes every release
+  sha256 :no_check # unsigned nightly builds; content changes every release
 
-  url "https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/latest/download/Ladybird-macos-arm64.zip"
-  name "Ladybird (nightly, unofficial)"
-  desc "Unofficial nightly arm64 build of the Ladybird browser"
-  homepage "https://ladybird.org"
+  url 'https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/latest/download/Ladybird-macos-arm64.zip'
+  name 'Ladybird (nightly, unofficial)'
+  desc 'Unofficial nightly arm64 build of the Ladybird browser'
+  homepage 'https://ladybird.org'
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sonoma"
+  depends_on macos: '>= :sonoma'
 
-  app "Ladybird.app"
+  app 'Ladybird.app'
 
   postflight do
     # Builds aren't notarized/signed, so strip the quarantine flag on install.
-    system_command "/usr/bin/xattr",
-                    args: ["-dr", "com.apple.quarantine", "#{appdir}/Ladybird.app"],
-                    sudo: false
+    system_command '/usr/bin/xattr',
+                   args: ['-dr', 'com.apple.quarantine', "#{appdir}/Ladybird.app"],
+                   sudo: false
   end
 
   caveats <<~EOS
