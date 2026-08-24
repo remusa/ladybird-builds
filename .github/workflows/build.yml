@@ -86,13 +86,21 @@ jobs:
           if [ -n "$VCPKG_LIB" ]; then
             cp -a "$VCPKG_LIB"/* "$LIB_DIR"/ 2>/dev/null || true
           fi
-          # Resolve remaining symlinks inside the bundle
+          # Resolve only symlinks that point outside the bundle
           while IFS= read -r -d '' link; do
             target=$(readlink "$link")
-            rm "$link"
-            if [ -e "$target" ] || [ -L "$target" ]; then
-              cp -a "$target" "$link" 2>/dev/null || true
-            fi
+            # Skip relative symlinks (versioned library links) and
+            # targets that resolve within the bundle.
+            case "$target" in
+              /*)
+                case "$target" in
+                  "$APP_PATH"*) ;; # inside bundle, keep
+                  *) rm "$link"
+                     if [ -e "$target" ]; then
+                       cp -a "$target" "$link" 2>/dev/null || true
+                     fi ;;
+                esac ;;
+            esac
           done < <(find "$APP_PATH" -type l -print0)
           # Rewrite hardcoded CI rpaths so dyld can find libraries at
           # install time.  All binaries live in Contents/MacOS and all
