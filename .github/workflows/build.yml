@@ -11,7 +11,11 @@ permissions:
 
 env:
   LADYBIRD_REPO: LadybirdBrowser/ladybird
-  LADYBIRD_REF: master
+  # Pinned to a commit a green run verified, rather than `master`: the
+  # weekly job then only changes when we bump this deliberately, instead of
+  # breaking on upstream churn (new Xcode SDK requirements, Qt becoming a
+  # hard dependency, ...). See README "Updating the pinned upstream commit".
+  LADYBIRD_REF: 1842eb707a
 
 jobs:
   build:

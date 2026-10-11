@@ -10,12 +10,32 @@ babysitting as upstream's build system changes.
 ## What's here
 
 - `.github/workflows/build.yml` — scheduled (weekly) GH Actions workflow.
-  Builds on a `macos-15` (Apple Silicon) hosted runner, zips the resulting
-  `Ladybird.app`, and publishes it as a GitHub Release tagged
-  `nightly-YYYY-MM-DD`.
+  Builds on a `macos-15` (Apple Silicon) hosted runner: `cmake --install`
+  lays the bundle down, upstream's `Meta/package-macos-app-bundle.py`
+  packages it (deploys Qt with `macdeployqt`, drops absolute rpaths,
+  re-signs, verifies nothing points outside the bundle), and the resulting
+  tarball is repacked into `Ladybird-macos-arm64.zip` and published as a
+  GitHub Release tagged `nightly-YYYY-MM-DD`. The build needs Qt 6.10+
+  (Homebrew `qt`); the workflow selects the newest Xcode preinstalled on
+  the runner itself.
 - `flake.nix` — a Nix flake that fetches the *prebuilt* binary from this
   repo's latest release (does not build from source under Nix — see below
   for why).
+
+## Updating the pinned upstream commit
+
+The workflow builds a pinned Ladybird commit (`LADYBIRD_REF`) instead of
+tracking `master`, so nightlies only change when you bump it. Upstream churn
+has broken this pipeline twice: once when `master` started using an Xcode SDK
+constant older runners lack, and once when Qt became a mandatory dependency.
+
+Check a build of the new commit is green before bumping:
+
+```sh
+gh api repos/LadybirdBrowser/ladybird/commits/master --jq .sha
+# edit LADYBIRD_REF in .github/workflows/build.yml, commit and push, then:
+gh workflow run build.yml
+```
 
 ## Consuming a build
 
