@@ -71,10 +71,11 @@ jobs:
 
       - name: Install build dependencies (Homebrew)
         run: |
+          # Upstream now builds the Qt UI on every desktop platform, so Qt 6.10+
+          # (Homebrew `qt`, currently 6.11) is a required build dependency, not
+          # just an alternative to the AppKit chrome.
           brew install autoconf autoconf-archive automake ccache cmake \
-            libtool nasm ninja pkg-config rust llvm@21
-          # Qt6 only needed if you want the Qt UI instead of the native AppKit chrome.
-          # brew install qt@6
+            libtool nasm ninja pkg-config qt rust llvm@21
 
       - name: Configure ccache
         run: |
@@ -100,72 +101,26 @@ jobs:
           CXX="$(brew --prefix llvm@21)/bin/clang++" \
           ./Meta/ladybird.py build
 
-      - name: Locate, fix, and zip the .app bundle
+      - name: Package .app bundle
         working-directory: ladybird
         run: |
-          APP_PATH=$(find Build -maxdepth 4 -name "Ladybird.app" -print -quit)
-          if [ -z "$APP_PATH" ]; then
-            echo "::error::Could not find Ladybird.app in Build/ output"
-            exit 1
-          fi
-          # Contents/lib is a symlink into the build tree — replace it
-          # with a real directory containing all libraries the binary needs.
-          LIB_DIR="$APP_PATH/Contents/lib"
-          BUILD_LIB="$(readlink -f "$LIB_DIR")"
-          VCPKG_LIB="$(find Build -path "*/vcpkg_installed/*/lib" -type d -print -quit)"
-          rm "$LIB_DIR"
-          mkdir -p "$LIB_DIR"
-          # Copy lagom libraries from the build tree
-          cp -a "$BUILD_LIB"/* "$LIB_DIR"/ 2>/dev/null || true
-          # Copy vcpkg-installed libraries (skia, ssl, freetype, etc.)
-          if [ -n "$VCPKG_LIB" ]; then
-            cp -a "$VCPKG_LIB"/* "$LIB_DIR"/ 2>/dev/null || true
-          fi
-          # Resolve only symlinks that point outside the bundle
-          while IFS= read -r -d '' link; do
-            target=$(readlink "$link")
-            # Skip relative symlinks (versioned library links) and
-            # targets that resolve within the bundle.
-            case "$target" in
-              /*)
-                case "$target" in
-                  "$APP_PATH"*) ;; # inside bundle, keep
-                  *) rm "$link"
-                     if [ -e "$target" ]; then
-                       cp -a "$target" "$link" 2>/dev/null || true
-                     fi ;;
-                esac ;;
-            esac
-          done < <(find "$APP_PATH" -type l -print0)
-          # Rewrite hardcoded CI rpaths so dyld can find libraries at
-          # install time.  All binaries live in Contents/MacOS and all
-          # libraries in Contents/lib, so @executable_path/../lib works
-          # for every executable.
-          find "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/lib" "$APP_PATH/Contents/Frameworks" -type f \
-            -exec file {} + | grep 'Mach-O' | cut -d: -f1 | while read -r bin; do
-            # Remove CI-runner rpaths
-            otool -l "$bin" 2>/dev/null \
-              | awk '/^ *path /{print $2}' \
-              | grep -E '^/' \
-              | while read -r old; do
-                install_name_tool -delete_rpath "$old" "$bin" 2>/dev/null || true
-              done
-            # Add portable rpaths
-            install_name_tool -add_rpath @executable_path/../lib "$bin" 2>/dev/null || true
-            install_name_tool -add_rpath @executable_path/../Frameworks "$bin" 2>/dev/null || true
-            case "$bin" in
-              */Contents/lib/*|*/Contents/Frameworks/*)
-                install_name_tool -add_rpath @loader_path "$bin" 2>/dev/null || true
-                install_name_tool -add_rpath @loader_path/.. "$bin" 2>/dev/null || true
-                ;;
-            esac
-          done
-          # Re-sign the bundle — install_name_tool invalidates the
-          # existing signature and macOS will kill unsigned binaries.
-          codesign --force --deep --sign - "$APP_PATH"
+          # Upstream ships Meta/package-macos-app-bundle.py, which runs
+          # macdeployqt to embed the Qt frameworks/plugins, drops absolute
+          # rpaths, copies the libraries the bundle still links into
+          # Contents/lib, re-signs and then verifies nothing points outside
+          # the bundle. Use it instead of hand-rolled fixups so we inherit
+          # upstream's packaging changes as the build system evolves.
+          cmake --install Build/release --prefix "$RUNNER_TEMP/install" --strip
+          python3 Meta/package-macos-app-bundle.py \
+            --build-dir Build/release \
+            --install-dir "$RUNNER_TEMP/install" \
+            --output "$RUNNER_TEMP/Ladybird-macos-arm64.tar.gz"
+          # Releases, the Homebrew cask and the Nix flake all consume a .zip,
+          # so repack upstream's tarball instead of changing three consumers.
           mkdir -p "$GITHUB_WORKSPACE/dist"
+          tar -xzf "$RUNNER_TEMP/Ladybird-macos-arm64.tar.gz" -C "$RUNNER_TEMP"
           ditto -c -k --sequesterRsrc --keepParent \
-            "$APP_PATH" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
+            "$RUNNER_TEMP/Ladybird.app" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
 
       - name: Publish nightly release
         uses: softprops/action-gh-release@v2
