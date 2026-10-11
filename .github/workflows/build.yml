@@ -19,6 +19,41 @@ jobs:
     timeout-minutes: 300
 
     steps:
+      # Upstream Ladybird tracks the newest Xcode SDK (master referenced mach
+      # VM_MEMORY_* constants that are missing from MacOSX15.5.sdk, which broke
+      # the 2026-09-20 and 2026-09-27 nightlies). The image default Xcode is
+      # often older than the newest it ships, so select the highest available
+      # version and export DEVELOPER_DIR for cmake, vcpkg and clang instead of
+      # relying on the runner default.
+      - name: Select newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          CANDIDATES=""
+          for candidate in /Applications/Xcode*.app; do
+            [ -d "$candidate" ] || continue
+            case "$candidate" in *-beta*) continue ;; esac
+            CANDIDATES="$CANDIDATES$candidate"$'\n'
+          done
+          if [ -z "$CANDIDATES" ]; then
+            # No stable Xcode shipped on this image — fall back to betas.
+            for candidate in /Applications/Xcode*.app; do
+              [ -d "$candidate" ] || continue
+              CANDIDATES="$CANDIDATES$candidate"$'\n'
+            done
+          fi
+          if [ -z "$CANDIDATES" ]; then
+            echo "::error::No Xcode.app found under /Applications"
+            exit 1
+          fi
+          NEWEST_XCODE="$(printf '%s\n' "$CANDIDATES" \
+            | awk -F/ '{ name=$NF; ver=name; sub(/^Xcode_?/, "", ver); sub(/\.app$/, "", ver);
+                         split(ver, v, "."); printf "%d.%d.%d %s\n", v[1]+0, v[2]+0, v[3]+0, name }' \
+            | sort -k1,1n -k2,2n -k3,3n | tail -1 | cut -d' ' -f2)"
+          sudo xcode-select -s "/Applications/$NEWEST_XCODE"
+          echo "DEVELOPER_DIR=/Applications/$NEWEST_XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcrun --show-sdk-path
+
       - name: Checkout Ladybird source
         uses: actions/checkout@v4
         with:
