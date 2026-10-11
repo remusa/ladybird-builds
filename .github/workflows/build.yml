@@ -15,7 +15,10 @@ env:
   # weekly job then only changes when we bump this deliberately, instead of
   # breaking on upstream churn (new Xcode SDK requirements, Qt becoming a
   # hard dependency, ...). See README "Updating the pinned upstream commit".
-  LADYBIRD_REF: 1842eb707a
+  # A full 40-character SHA: actions/checkout resolves `ref` as a branch or
+  # tag name, so a short SHA fails with
+  # "A branch or tag with the name '<sha>' could not be found".
+  LADYBIRD_REF: 1842eb707aac658e788b01c9fac0afce000852a6
 
 jobs:
   build:

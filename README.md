@@ -33,7 +33,9 @@ Check a build of the new commit is green before bumping:
 
 ```sh
 gh api repos/LadybirdBrowser/ladybird/commits/master --jq .sha
-# edit LADYBIRD_REF in .github/workflows/build.yml, commit and push, then:
+# edit LADYBIRD_REF in .github/workflows/build.yml (the full 40-character
+# SHA — actions/checkout treats a short SHA as a branch/tag name and fails),
+# commit and push, then:
 gh workflow run build.yml
 ```
 
