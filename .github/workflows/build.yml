@@ -1,9 +1,8 @@
 name: Build Ladybird (macOS arm64 nightly)
 
 on:
-  schedule:
-    # Every Sunday at 06:00 UTC. Adjust cadence as upstream churn dictates.
-    - cron: "0 6 * * 0"
+  # Dispatch-only on purpose: LADYBIRD_REF is pinned, so a scheduled run
+  # would rebuild the same commit every week. Dispatch after bumping the pin.
   workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
 
 permissions:
@@ -12,7 +11,7 @@ permissions:
 env:
   LADYBIRD_REPO: LadybirdBrowser/ladybird
   # Pinned to a commit a green run verified, rather than `master`: the
-  # weekly job then only changes when we bump this deliberately, instead of
+  # build only changes when we bump this deliberately, instead of
   # breaking on upstream churn (new Xcode SDK requirements, Qt becoming a
   # hard dependency, ...). See README "Updating the pinned upstream commit".
   # A full 40-character SHA: actions/checkout resolves `ref` as a branch or

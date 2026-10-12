@@ -9,7 +9,9 @@ babysitting as upstream's build system changes.
 
 ## What's here
 
-- `.github/workflows/build.yml` — scheduled (weekly) GH Actions workflow.
+- `.github/workflows/build.yml` — dispatch-only GH Actions workflow (no
+  `schedule`: `LADYBIRD_REF` is pinned, so a weekly run would rebuild the
+  same commit; dispatch it after bumping the pin).
   Builds on a `macos-15` (Apple Silicon) hosted runner: `cmake --install`
   lays the bundle down, upstream's `Meta/package-macos-app-bundle.py`
   packages it (deploys Qt with `macdeployqt`, drops absolute rpaths,

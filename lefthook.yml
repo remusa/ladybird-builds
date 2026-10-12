@@ -5,9 +5,6 @@ pre-commit:
       run: mise run lint:yaml
     nix:
       run: mise run lint:nix
-    ruby:
-      glob: "*.rb"
-      run: mise run lint:ruby
     markdown:
       glob: "*.md"
       run: mise run lint:markdown

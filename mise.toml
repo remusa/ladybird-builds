@@ -8,15 +8,14 @@ shfmt = "3.13.1"
 # fails with "No version is set for shim: shellcheck").
 shellcheck = "0.11.0"
 # nixfmt is managed by Nix (nixpkgs), not mise — available on PATH.
-# rubocop comes from the Ruby toolchain; markdownlint-cli is managed by mise's
-# npm backend.
+# markdownlint-cli is managed by mise's npm backend. No Ruby toolchain here
+# any more: the Homebrew cask lives in remusa/homebrew-tap.
 
 [tasks.lint]
 description = "Run all linters"
 run = """
 mise run lint:yaml
 mise run lint:nix
-mise run lint:ruby
 mise run lint:markdown
 """
 
@@ -28,10 +27,6 @@ run = "actionlint .github/workflows/*.yml"
 description = "Check Nix formatting with nixfmt"
 run = "nixfmt --check flake.nix"
 
-[tasks."lint:ruby"]
-description = "Lint Ruby files with rubocop"
-run = "rubocop ladybird-nightly.rb"
-
 [tasks."lint:markdown"]
 description = "Lint Markdown with markdownlint"
 run = "markdownlint '*.md'"
@@ -40,7 +35,6 @@ run = "markdownlint '*.md'"
 description = "Auto-fix formatting everywhere"
 run = """
 mise run fmt:nix
-mise run fmt:ruby
 mise run fmt:markdown
 mise run fmt:shell
 """
@@ -48,10 +42,6 @@ mise run fmt:shell
 [tasks."fmt:nix"]
 description = "Format Nix files with nixfmt"
 run = "nixfmt flake.nix"
-
-[tasks."fmt:ruby"]
-description = "Auto-correct Ruby style issues"
-run = "rubocop --autocorrect ladybird-nightly.rb"
 
 [tasks."fmt:markdown"]
 description = "Fix Markdown formatting"

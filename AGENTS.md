@@ -16,15 +16,14 @@ Tools are managed via mise — run `mise install` to set up the dev environment.
 |-----------|--------------|-----------|
 | YAML      | actionlint   | —         |
 | Nix       | nixfmt       | nixfmt    |
-| Ruby      | rubocop      | rubocop   |
 | Markdown  | markdownlint | —         |
 | Shell     | shfmt        | shfmt     |
 
 ## Project Structure
 
-- `.github/workflows/build.yml` — weekly macOS arm64 nightly build CI
+- `.github/workflows/build.yml` — dispatch-only macOS arm64 nightly build CI
 - `flake.nix` — Nix flake for prebuilt binary distribution
-- `ladybird-nightly.rb` — Homebrew cask formula
+- the Homebrew cask lives in `remusa/homebrew-tap` (`Casks/ladybird-nightly.rb`), not here
 - `mise.toml` — tool versions and task runner
 
 ## Cross-Repo Conventions
