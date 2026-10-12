@@ -7,7 +7,16 @@ on:
     # dark 23:45-08:00 local, minerva sleeps 00:00-06:00 local, and a run at
     # 06:00 UTC would finish inside those windows.
     - cron: "0 2 * * 0"
-  workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
+  workflow_dispatch:
+    inputs:
+      # The failure notification is the one part of this workflow that a
+      # successful run never exercises, and testing it the honest way costs a
+      # ~1h40m build. This fails in seconds instead: dispatch with
+      # selftest_failure=true, confirm the issue appears, then close it.
+      selftest_failure:
+        description: "Fail immediately, to test the failure notification (no build)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # needed to create releases
@@ -31,6 +40,12 @@ jobs:
     timeout-minutes: 300
 
     steps:
+      - name: Self-test failure
+        if: github.event.inputs.selftest_failure == 'true'
+        run: |
+          echo "::error::deliberate failure - dispatched as a notification self-test"
+          exit 1
+
       # Upstream Ladybird tracks the newest Xcode SDK (master referenced mach
       # VM_MEMORY_* constants that are missing from MacOSX15.5.sdk, which broke
       # the 2026-09-20 and 2026-09-27 nightlies). The image default Xcode is
@@ -226,7 +241,7 @@ jobs:
           TITLE="Nightly build failure"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           BODY="$(printf 'The weekly Ladybird nightly build failed.\n\n- run: %s\n- upstream commit built: %s\n- workflow revision: %s\n\nCommon causes and the triage order are in the ladybird-builds skill. Close this issue once a green run has published.\n' \
-            "$RUN_URL" "${{ steps.rev.outputs.sha }}" "${{ github.sha }}")"
+            "$RUN_URL" "${{ steps.rev.outputs.sha || 'n/a' }}" "${{ github.sha }}")"
           EXISTING="$(gh issue list --state open --limit 100 --json number,title \
             --jq '.[] | "\(.number)\t\(.title)"' \
             | awk -F'\t' -v title="$TITLE" '$2 == title { print $1; exit }')"
