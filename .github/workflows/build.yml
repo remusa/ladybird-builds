@@ -172,10 +172,10 @@ jobs:
 
       - name: Update flake pin
         working-directory: self
-        # A release that published fine must not be reported as failed because
-        # this push was rejected (branch protection, token scope). Warn loudly
-        # instead, and bump flake.nix by hand from the run's log.
-        continue-on-error: true
+        # Deliberately fatal: a published release whose pin commit was rejected
+        # (branch protection, token scope) means consumers will never see it,
+        # and a warning would hide exactly the staleness this repo keeps
+        # tripping over. Red run + the manual fallback in README.
         run: |
           ZIP="$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
           VERSION="${{ steps.rev.outputs.date }}"
