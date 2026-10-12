@@ -9,9 +9,11 @@ babysitting as upstream's build system changes.
 
 ## What's here
 
-- `.github/workflows/build.yml` — dispatch-only GH Actions workflow (no
-  `schedule`: `LADYBIRD_REF` is pinned, so a weekly run would rebuild the
-  same commit; dispatch it after bumping the pin).
+- `.github/workflows/build.yml` — weekly GH Actions workflow (Sundays 02:00
+  UTC = 10:00 local, plus `workflow_dispatch`). It builds whatever
+  `LadybirdBrowser/ladybird@master` is that day, so nothing needs bumping by
+  hand; a failed run opens an issue (GitHub's failed-scheduled-workflow email
+  is the backstop).
   Builds on a `macos-15` (Apple Silicon) hosted runner: `cmake --install`
   lays the bundle down, upstream's `Meta/package-macos-app-bundle.py`
   packages it (deploys Qt with `macdeployqt`, drops absolute rpaths,
@@ -24,22 +26,33 @@ babysitting as upstream's build system changes.
   repo's latest release (does not build from source under Nix — see below
   for why).
 
-## Updating the pinned upstream commit
+## Which Ladybird a machine runs
 
-The workflow builds a pinned Ladybird commit (`LADYBIRD_REF`) instead of
-tracking `master`, so nightlies only change when you bump it. Upstream churn
-has broken this pipeline twice: once when `master` started using an Xcode SDK
-constant older runners lack, and once when Qt became a mandatory dependency.
-
-Check a build of the new commit is green before bumping:
+The workflow tracks upstream `master`, but nothing downstream floats with it.
+Each successful run pins **this** repo's `flake.nix` to the release it just
+published (`version` + the zip's sha256), so consumers stay on a known-good
+build until they ask for a new one:
 
 ```sh
-gh api repos/LadybirdBrowser/ladybird/commits/master --jq .sha
-# edit LADYBIRD_REF in .github/workflows/build.yml (the full 40-character
-# SHA — actions/checkout treats a short SHA as a branch/tag name and fails),
-# commit and push, then:
-gh workflow run build.yml
+nix flake update ladybird-builds   # then darwin-rebuild switch
 ```
+
+Because the release job only pins after a green build, a broken upstream week
+never reaches anyone: the flake keeps pointing at the last release that built.
+
+To hold a specific build, pin the input to the commit that carries it, or stop
+updating. To stopgap a run of broken upstream weeks, set `LADYBIRD_REF` in the
+workflow to the last known-good SHA (full 40 characters — `actions/checkout`
+treats a short SHA as a branch/tag name and fails) and dispatch manually.
+
+## Rebuilding after upstream churn
+
+Upstream has broken this pipeline four times: a required Xcode SDK constant,
+Qt becoming a mandatory dependency, and a vcpkg mirror flake. The first two are
+handled in the workflow already (it selects the newest preinstalled Xcode, and
+installs Homebrew `qt`); if a new one appears, the failure issue links the run
+and the log names the missing prerequisite. Compare against
+`Documentation/BuildInstructionsLadybird.md` upstream.
 
 ## Consuming a build
 

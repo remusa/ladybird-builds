@@ -1,23 +1,29 @@
 name: Build Ladybird (macOS arm64 nightly)
 
 on:
-  # Dispatch-only on purpose: LADYBIRD_REF is pinned, so a scheduled run
-  # would rebuild the same commit every week. Dispatch after bumping the pin.
+  schedule:
+    # Sundays 02:00 UTC = 10:00 local (UTC+8). Chosen so the ~1h40m build and
+    # the failure notification land in the hosts' awake window: pve/arrstack are
+    # dark 23:45-08:00 local, minerva sleeps 00:00-06:00 local, and a run at
+    # 06:00 UTC would finish inside those windows.
+    - cron: "0 2 * * 0"
   workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
 
 permissions:
   contents: write   # needed to create releases
+  issues: write     # needed to file the failure issue
 
 env:
   LADYBIRD_REPO: LadybirdBrowser/ladybird
-  # Pinned to a commit a green run verified, rather than `master`: the
-  # build only changes when we bump this deliberately, instead of
-  # breaking on upstream churn (new Xcode SDK requirements, Qt becoming a
-  # hard dependency, ...). See README "Updating the pinned upstream commit".
-  # A full 40-character SHA: actions/checkout resolves `ref` as a branch or
-  # tag name, so a short SHA fails with
-  # "A branch or tag with the name '<sha>' could not be found".
-  LADYBIRD_REF: e16034b68a029363f04b66009ad96b25ce3d932f
+  # Tracks upstream master on purpose: the weekly job builds whatever is current,
+  # so nobody has to bump anything. Consumers stay stable anyway, because the
+  # release job pins THIS repo's flake.nix to the release it just published.
+  #
+  # Upstream churn has broken this pipeline four times (a required Xcode SDK
+  # constant, Qt becoming a mandatory dependency, a vcpkg mirror flake), which is
+  # why a failed run now opens an issue instead of failing quietly. If that
+  # happens, pin this to the last known-good SHA as a stopgap.
+  LADYBIRD_REF: master
 
 jobs:
   build:
@@ -203,4 +209,30 @@ jobs:
           else
             git commit -m "chore(flake): pin release $VERSION"
             git push
+          fi
+
+      # Hands-off means nobody is watching the Actions tab, so a failure has to
+      # surface where it will be seen. An issue rather than a webhook: the
+      # arrstack n8n webhook is LAN-only (https://n8n.home.arpa) and unreachable
+      # from a GitHub runner, and both n8n and minerva are asleep in parts of
+      # this window. GitHub's own failed-scheduled-workflow email is the
+      # backstop; this is the durable record with the run linked.
+      - name: File or update the failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TITLE="Nightly build failure"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY="$(printf 'The weekly Ladybird nightly build failed.\n\n- run: %s\n- upstream commit built: %s\n- workflow revision: %s\n\nCommon causes and the triage order are in the ladybird-builds skill. Close this issue once a green run has published.\n' \
+            "$RUN_URL" "${{ steps.rev.outputs.sha }}" "${{ github.sha }}")"
+          EXISTING="$(gh issue list --state open --limit 100 --json number,title \
+            --jq '.[] | "\(.number)\t\(.title)"' \
+            | awk -F'\t' -v title="$TITLE" '$2 == title { print $1; exit }')"
+          if [ -n "$EXISTING" ]; then
+            echo "issue #$EXISTING already open - adding a comment"
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
           fi
