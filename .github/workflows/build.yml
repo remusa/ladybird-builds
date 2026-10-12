@@ -128,6 +128,24 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             "$RUNNER_TEMP/Ladybird.app" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
 
+      # The tag is the UTC build date, so a second run on the same day would
+      # make action-gh-release UPDATE the existing release and replace the
+      # asset. That silently changes the bytes behind a tag that consumers pin
+      # by hash (2026-10-12: two runs on 2026-10-11 produced zips that differed
+      # by 15 bytes). Fail instead, and let a human delete the release if a
+      # rebuild really is wanted.
+      - name: Refuse to overwrite an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="nightly-${{ steps.rev.outputs.date }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::release $TAG already exists; refusing to replace its asset. Delete the release first if a rebuild is really wanted."
+            exit 1
+          fi
+          echo "no existing release $TAG - safe to publish"
+
       - name: Publish nightly release
         uses: softprops/action-gh-release@v2
         with:
@@ -141,3 +159,48 @@ jobs:
             see this repo's README for how to run it.
           files: dist/Ladybird-macos-arm64.zip
           make_latest: true
+
+
+      # Keep the flake's release pin in step with what was just published, so
+      # consumers (the homelab nix-darwin hosts) pick a new nightly up with a
+      # plain `nix flake update ladybird-builds`. This repo has no push or
+      # schedule trigger, so the commit cannot loop back into another build.
+      - name: Checkout this repo for the flake pin
+        uses: actions/checkout@v4
+        with:
+          path: self
+
+      - name: Update flake pin
+        working-directory: self
+        # A release that published fine must not be reported as failed because
+        # this push was rejected (branch protection, token scope). Warn loudly
+        # instead, and bump flake.nix by hand from the run's log.
+        continue-on-error: true
+        run: |
+          ZIP="$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
+          VERSION="${{ steps.rev.outputs.date }}"
+          HASH="sha256-$(openssl dgst -sha256 -binary "$ZIP" | base64)"
+          python3 - "$VERSION" "$HASH" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          version, hash_ = sys.argv[1], sys.argv[2]
+          path = pathlib.Path("flake.nix")
+          text = path.read_text()
+          text, version_hits = re.subn(r'version = "[^"]*";', f'version = "{version}";', text, count=1)
+          text, hash_hits = re.subn(r'hash = "sha256-[^"]*";', f'hash = "{hash_}";', text, count=1)
+          if version_hits != 1 or hash_hits != 1:
+              sys.exit(f"error: expected one version and one hash line, patched {version_hits}/{hash_hits}")
+          path.write_text(text)
+          print(f"pinned {version} {hash_}")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flake.nix
+          if git diff --cached --quiet; then
+            echo "flake.nix already pins $VERSION - nothing to do"
+          else
+            git commit -m "chore(flake): pin release $VERSION"
+            git push
+          fi

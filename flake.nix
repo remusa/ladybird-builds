@@ -11,37 +11,46 @@
       system = "aarch64-darwin";
       pkgs = import nixpkgs { inherit system; };
 
-      # --- Bump these two on every nightly release. ---
-      # version matches the release tag date (nightly-YYYY-MM-DD).
-      # Get the sha256 with:
-      #   nix-prefetch-url --unpack https://github.com/remusa/ladybird-builds/releases/download/nightly-YYYY-MM-DD/Ladybird-macos-arm64.zip
-      version = "2026-10-11"; # matches the release tag date
-      sha256 = "17hbs4gqvc9xjghl1qsrhy37ac98ng2qx76cmv4qbvkgbc3413rp"; # see above for bump
-      # --------------------------------------------------
+      # --- Release pin. ---
+      # `version` is the release tag date (nightly-YYYY-MM-DD) and `hash` is the
+      # SRI sha256 of that release's Ladybird-macos-arm64.zip.
+      #
+      # The release job rewrites both of these and commits them, so consumers only
+      # need `nix flake update ladybird-builds`. Bump by hand if that step failed:
+      #   nix store prefetch-file --json --hash-type sha256 <release-zip-url>
+      version = "2026-10-11";
+      hash = "sha256-ND5Wo8+HuLkzvJ4sUAUsddTgeRFb46EO1NPNLYCcH/c=";
+      # ------------------------------------------------------------------
 
       ladybird = pkgs.stdenvNoCC.mkDerivation {
         pname = "ladybird";
         inherit version;
 
-        # fetchzip, not fetchurl: the documented bump command prefetches with
-        # `nix-prefetch-url --unpack`, which hashes the *contents*, not the zip.
-
-        src = pkgs.fetchzip {
+        # fetchurl, not fetchzip: the CI release step hashes the zip itself
+        # (`openssl dgst -sha256 -binary | base64`), which needs no Nix on the
+        # runner. The bundle is unpacked by the default unpackPhase below.
+        src = pkgs.fetchurl {
           url = "https://github.com/remusa/ladybird-builds/releases/download/nightly-${version}/Ladybird-macos-arm64.zip";
-          inherit sha256;
+          inherit hash;
         };
 
-        # fetchzip has already extracted the zip by the time this derivation
-        # runs, and the zip contains *only* Ladybird.app, so the store path
-        # holds a bare `Contents/` at its root. Skip unpackPhase and rebuild
-        # the app path from it.
-        unpackPhase = "true";
+        nativeBuildInputs = [ pkgs.unzip ];
 
+        # The zip holds a single top-level Ladybird.app/, so pin sourceRoot to the
+        # unpack directory: the default would cd INTO the bundle and then
+        # `cp -R Ladybird.app` finds nothing.
+        sourceRoot = ".";
+
+        # A release bundle: nothing to configure, nothing to build.
+        dontConfigure = true;
+        dontBuild = true;
+
+        # nixpkgs convention for a .app is $out/Applications, which is what
+        # mac-app-util and nix-darwin's system-applications look for.
         installPhase = ''
           runHook preInstall
-          mkdir -p "$out/Applications/Ladybird.app"
-          cp -r "$src/Contents" "$out/Applications/Ladybird.app/Contents"
-          chmod -R u+w "$out/Applications"
+          mkdir -p $out/Applications
+          cp -R Ladybird.app $out/Applications/
           runHook postInstall
         '';
 

@@ -64,13 +64,26 @@ repo's `releases/latest`.
 }
 ```
 
-You'll need to bump `version` and `sha256` in `flake.nix` after each
-release you want to pin to — get the hash with:
+`flake.nix` pins one release (`version` = tag date, `hash` = the SRI sha256
+of the zip) and the release job rewrites both and commits them itself, so
+consumers only need:
 
 ```sh
-nix-prefetch-url --unpack \
+nix flake update ladybird-builds
+```
+
+If that commit step ever fails, bump by hand with the hash it would have
+used — note this is the hash of the **zip**, not of its contents (the flake
+uses `fetchurl`, not `fetchzip`):
+
+```sh
+nix store prefetch-file --json --hash-type sha256 \
   https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/download/nightly-YYYY-MM-DD/Ladybird-macos-arm64.zip
 ```
+
+Only one release per UTC day can exist: the tag is the build date and the
+workflow refuses to overwrite an existing release's asset, because replacing
+bytes under a tag would break every pinned consumer.
 
 **Manual download:** grab the zip from Releases, unzip, drag to
 `/Applications`.
