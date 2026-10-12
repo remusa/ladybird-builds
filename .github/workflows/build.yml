@@ -17,7 +17,7 @@ env:
   # A full 40-character SHA: actions/checkout resolves `ref` as a branch or
   # tag name, so a short SHA fails with
   # "A branch or tag with the name '<sha>' could not be found".
-  LADYBIRD_REF: 1842eb707aac658e788b01c9fac0afce000852a6
+  LADYBIRD_REF: e16034b68a029363f04b66009ad96b25ce3d932f
 
 jobs:
   build:
