@@ -1,12 +1,16 @@
-name: Build Ladybird (macOS arm64 nightly)
+name: Build Ladybird (macOS arm64)
 
 on:
   schedule:
-    # Sundays 02:00 UTC = 10:00 local (UTC+8). Chosen so the ~1h40m build and
-    # the failure notification land in the hosts' awake window: pve/arrstack are
-    # dark 23:45-08:00 local, minerva sleeps 00:00-06:00 local, and a run at
-    # 06:00 UTC would finish inside those windows.
-    - cron: "0 2 * * 0"
+    # Sunday and Wednesday 02:00 UTC = 10:00 local (UTC+8). Chosen so the
+    # ~1h40m build and the failure notification land in the hosts' awake
+    # window: pve/arrstack are dark 23:45-08:00 local, minerva sleeps
+    # 00:00-06:00 local, and a run at 06:00 UTC would finish inside those
+    # windows. Twice a week rather than weekly so the ccache is re-accessed
+    # inside GitHub's 7-day cache eviction window; daily would add ~365
+    # release commits and ~32 GiB/yr of assets for freshness the pinned Nix
+    # consumers never consume.
+    - cron: "0 2 * * 0,3"
   workflow_dispatch:
     inputs:
       # The failure notification is the one part of this workflow that a
@@ -24,7 +28,13 @@ permissions:
 
 env:
   LADYBIRD_REPO: LadybirdBrowser/ladybird
-  # Tracks upstream master on purpose: the weekly job builds whatever is current,
+  # Releases older than this (and their tags) are pruned after every successful
+  # build. Each is ~88 MiB, so at twice a week an unbounded history grows
+  # ~9 GiB/yr. The flake always pins the newest release, which is never pruned;
+  # a consumer pinned to a pruned build must run `nix flake update` (see README).
+  RELEASE_RETENTION: 20
+  # Tracks upstream master on purpose: the twice-weekly job builds whatever is
+  # current,
   # so nobody has to bump anything. Consumers stay stable anyway, because the
   # release job pins THIS repo's flake.nix to the release it just published.
   #
@@ -160,18 +170,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          TAG="nightly-${{ steps.rev.outputs.date }}"
+          TAG="build-${{ steps.rev.outputs.date }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::error::release $TAG already exists; refusing to replace its asset. Delete the release first if a rebuild is really wanted."
             exit 1
           fi
           echo "no existing release $TAG - safe to publish"
 
-      - name: Publish nightly release
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nightly-${{ steps.rev.outputs.date }}
-          name: "Ladybird nightly ${{ steps.rev.outputs.date }} (${{ steps.rev.outputs.sha }})"
+          tag_name: build-${{ steps.rev.outputs.date }}
+          name: "Ladybird build ${{ steps.rev.outputs.date }} (${{ steps.rev.outputs.sha }})"
           body: |
             Unofficial arm64 macOS build of Ladybird, built from
             ${{ env.LADYBIRD_REPO }}@${{ steps.rev.outputs.sha }}.
@@ -181,11 +191,32 @@ jobs:
           files: dist/Ladybird-macos-arm64.zip
           make_latest: true
 
+      # Each asset is ~88 MiB, so keep the newest RELEASE_RETENTION releases and
+      # delete older ones (with their tags). The newest release is the one the
+      # flake pins and `releases/latest` serves, so it is never touched.
+      - name: Prune old releases (keep newest ${{ env.RELEASE_RETENTION }})
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          KEEP="${{ env.RELEASE_RETENTION }}"
+          # Order by the date in the tag (build-YYYY-MM-DD), not createdAt:
+          # releases can share a createdAt and it does not always match the
+          # build date, so sorting by it can keep the wrong ones. Tags without
+          # a trailing date sort as oldest.
+          gh release list --limit 200 --json tagName \
+            --jq "sort_by(.tagName | (capture(\"(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})$\") // {\"d\":\"0\"}).d) | reverse | .[$KEEP:] | .[].tagName" \
+            | while read -r tag; do
+                [ -n "$tag" ] || continue
+                echo "pruning $tag"
+                gh release delete "$tag" --yes --cleanup-tag
+              done
+          echo "pruned old releases, kept the newest $KEEP"
 
       # Keep the flake's release pin in step with what was just published, so
-      # consumers (the homelab nix-darwin hosts) pick a new nightly up with a
-      # plain `nix flake update ladybird-builds`. This repo has no push or
-      # schedule trigger, so the commit cannot loop back into another build.
+      # consumers (the homelab nix-darwin hosts) pick a new build up with a
+      # plain `nix flake update ladybird-builds`. This repo has no push trigger,
+      # so the pin commit cannot loop back into another build.
       - name: Checkout this repo for the flake pin
         uses: actions/checkout@v4
         with:
@@ -199,30 +230,32 @@ jobs:
         # tripping over. Red run + the manual fallback in README.
         run: |
           ZIP="$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
-          VERSION="${{ steps.rev.outputs.date }}"
+          DATE="${{ steps.rev.outputs.date }}"
+          TAG="build-$DATE"
           HASH="sha256-$(openssl dgst -sha256 -binary "$ZIP" | base64)"
-          python3 - "$VERSION" "$HASH" <<'PY'
+          python3 - "$TAG" "$DATE" "$HASH" <<'PY'
           import pathlib
           import re
           import sys
 
-          version, hash_ = sys.argv[1], sys.argv[2]
+          tag, version, hash_ = sys.argv[1], sys.argv[2], sys.argv[3]
           path = pathlib.Path("flake.nix")
           text = path.read_text()
+          text, tag_hits = re.subn(r'releaseTag = "[^"]*";', f'releaseTag = "{tag}";', text, count=1)
           text, version_hits = re.subn(r'version = "[^"]*";', f'version = "{version}";', text, count=1)
           text, hash_hits = re.subn(r'hash = "sha256-[^"]*";', f'hash = "{hash_}";', text, count=1)
-          if version_hits != 1 or hash_hits != 1:
-              sys.exit(f"error: expected one version and one hash line, patched {version_hits}/{hash_hits}")
+          if tag_hits != 1 or version_hits != 1 or hash_hits != 1:
+              sys.exit(f"error: expected one releaseTag, one version and one hash line, patched {tag_hits}/{version_hits}/{hash_hits}")
           path.write_text(text)
-          print(f"pinned {version} {hash_}")
+          print(f"pinned {tag} {hash_}")
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add flake.nix
           if git diff --cached --quiet; then
-            echo "flake.nix already pins $VERSION - nothing to do"
+            echo "flake.nix already pins $TAG - nothing to do"
           else
-            git commit -m "chore(flake): pin release $VERSION"
+            git commit -m "chore(flake): pin release $TAG"
             git push
           fi
 
@@ -238,9 +271,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          TITLE="Nightly build failure"
+          TITLE="Ladybird build failure"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          BODY="$(printf 'The weekly Ladybird nightly build failed.\n\n- run: %s\n- upstream commit built: %s\n- workflow revision: %s\n\nCommon causes and the triage order are in the ladybird-builds skill. Close this issue once a green run has published.\n' \
+          BODY="$(printf 'The Ladybird build failed.\n\n- run: %s\n- upstream commit built: %s\n- workflow revision: %s\n\nCommon causes and the triage order are in the ladybird-builds skill. Close this issue once a green run has published.\n' \
             "$RUN_URL" "${{ steps.rev.outputs.sha || 'n/a' }}" "${{ github.sha }}")"
           EXISTING="$(gh issue list --state open --limit 100 --json number,title \
             --jq '.[] | "\(.number)\t\(.title)"' \

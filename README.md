@@ -1,7 +1,7 @@
 # ladybird-builds
 
 Unofficial CI that builds [Ladybird](https://ladybird.org) from source for
-macOS arm64 and publishes nightly `.app` bundles as GitHub Releases.
+macOS arm64 and publishes `.app` bundles as GitHub Releases.
 
 This is **not** an official Ladybird distribution. Ladybird is pre-alpha
 software; expect breakage, and expect this pipeline to need occasional
@@ -9,17 +9,18 @@ babysitting as upstream's build system changes.
 
 ## What's here
 
-- `.github/workflows/build.yml` — weekly GH Actions workflow (Sundays 02:00
-  UTC = 10:00 local, plus `workflow_dispatch`). It builds whatever
-  `LadybirdBrowser/ladybird@master` is that day, so nothing needs bumping by
-  hand; a failed run opens an issue (GitHub's failed-scheduled-workflow email
-  is the backstop).
+- `.github/workflows/build.yml` — twice-weekly GH Actions workflow (Sundays
+  and Wednesdays 02:00 UTC = 10:00 local, plus `workflow_dispatch`). It builds
+  whatever `LadybirdBrowser/ladybird@master` is that day, so nothing needs
+  bumping by hand; a failed run opens an issue (GitHub's
+  failed-scheduled-workflow email is the backstop). Releases older than the
+  newest 20 are pruned automatically after each successful build.
   Builds on a `macos-15` (Apple Silicon) hosted runner: `cmake --install`
   lays the bundle down, upstream's `Meta/package-macos-app-bundle.py`
   packages it (deploys Qt with `macdeployqt`, drops absolute rpaths,
   re-signs, verifies nothing points outside the bundle), and the resulting
   tarball is repacked into `Ladybird-macos-arm64.zip` and published as a
-  GitHub Release tagged `nightly-YYYY-MM-DD`. The build needs Qt 6.10+
+  GitHub Release tagged `build-YYYY-MM-DD`. The build needs Qt 6.10+
   (Homebrew `qt`); the workflow selects the newest Xcode preinstalled on
   the runner itself.
 - `flake.nix` — a Nix flake that fetches the *prebuilt* binary from this
@@ -91,7 +92,7 @@ uses `fetchurl`, not `fetchzip`):
 
 ```sh
 nix store prefetch-file --json --hash-type sha256 \
-  https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/download/nightly-YYYY-MM-DD/Ladybird-macos-arm64.zip
+  https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/download/build-YYYY-MM-DD/Ladybird-macos-arm64.zip
 ```
 
 Only one release per UTC day can exist: the tag is the build date and the
@@ -130,5 +131,5 @@ just needs a stable URL and a hash.
 - The `actions/cache` key is tied to `vcpkg.json` / `vcpkg-configuration.json`
   hashes, so cache invalidates automatically when upstream's dependency
   manifest changes.
-- Consider pruning old nightly releases periodically; they're not meant to
-  be a permanent archive.
+- Old releases are pruned automatically (the newest 20 are kept); they are not
+  meant to be a permanent archive.

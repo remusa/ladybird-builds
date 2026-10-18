@@ -21,7 +21,7 @@ Tools are managed via mise — run `mise install` to set up the dev environment.
 
 ## Project Structure
 
-- `.github/workflows/build.yml` — dispatch-only macOS arm64 nightly build CI
+- `.github/workflows/build.yml` — scheduled + dispatch macOS arm64 build CI
 - `flake.nix` — Nix flake for prebuilt binary distribution
 - the Homebrew cask lives in `remusa/homebrew-tap` (`Casks/ladybird-nightly.rb`), not here
 - `mise.toml` — tool versions and task runner

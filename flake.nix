@@ -1,5 +1,5 @@
 {
-  description = "Prebuilt Ladybird browser (unofficial nightly, macOS arm64)";
+  description = "Prebuilt Ladybird browser (unofficial, macOS arm64)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -12,12 +12,13 @@
       pkgs = import nixpkgs { inherit system; };
 
       # --- Release pin. ---
-      # `version` is the release tag date (nightly-YYYY-MM-DD) and `hash` is the
-      # SRI sha256 of that release's Ladybird-macos-arm64.zip.
+      # `releaseTag` is the release tag (build-YYYY-MM-DD), `version` its date
+      # part, and `hash` the SRI sha256 of that release's Ladybird-macos-arm64.zip.
       #
-      # The release job rewrites both of these and commits them, so consumers only
+      # The release job rewrites all three and commits them, so consumers only
       # need `nix flake update ladybird-builds`. Bump by hand if that step failed:
       #   nix store prefetch-file --json --hash-type sha256 <release-zip-url>
+      releaseTag = "nightly-2026-10-18";
       version = "2026-10-18";
       hash = "sha256-xvMQ1gtIEQmcgJ6+MwW/rNNCUBBGPobnzxji1DPN6vY=";
       # ------------------------------------------------------------------
@@ -30,7 +31,7 @@
         # (`openssl dgst -sha256 -binary | base64`), which needs no Nix on the
         # runner. The bundle is unpacked by the default unpackPhase below.
         src = pkgs.fetchurl {
-          url = "https://github.com/remusa/ladybird-builds/releases/download/nightly-${version}/Ladybird-macos-arm64.zip";
+          url = "https://github.com/remusa/ladybird-builds/releases/download/${releaseTag}/Ladybird-macos-arm64.zip";
           inherit hash;
         };
 
@@ -55,7 +56,7 @@
         '';
 
         meta = with pkgs.lib; {
-          description = "Unofficial nightly build of the Ladybird browser";
+          description = "Unofficial build of the Ladybird browser";
           homepage = "https://ladybird.org";
           platforms = [ "aarch64-darwin" ];
         };
