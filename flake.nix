@@ -18,8 +18,8 @@
       # The release job rewrites both of these and commits them, so consumers only
       # need `nix flake update ladybird-builds`. Bump by hand if that step failed:
       #   nix store prefetch-file --json --hash-type sha256 <release-zip-url>
-      version = "2026-10-12";
-      hash = "sha256-MzHYH1Sjfsk8AkXa5K5T5Ilq4RSQd82Qu9XAiRGBDqI=";
+      version = "2026-10-18";
+      hash = "sha256-xvMQ1gtIEQmcgJ6+MwW/rNNCUBBGPobnzxji1DPN6vY=";
       # ------------------------------------------------------------------
 
       ladybird = pkgs.stdenvNoCC.mkDerivation {
