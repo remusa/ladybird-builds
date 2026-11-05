@@ -141,14 +141,23 @@ jobs:
       - name: Package .app bundle
         working-directory: ladybird
         run: |
-          # Upstream ships Meta/package-macos-app-bundle.py, which runs
-          # macdeployqt to embed the Qt frameworks/plugins, drops absolute
-          # rpaths, copies the libraries the bundle still links into
-          # Contents/lib, re-signs and then verifies nothing points outside
-          # the bundle. Use it instead of hand-rolled fixups so we inherit
-          # upstream's packaging changes as the build system evolves.
+          # Upstream's Meta/package-macos-app-bundle.py runs macdeployqt to
+          # embed the Qt frameworks/plugins, drops absolute rpaths, copies the
+          # libraries the bundle still links into Contents/lib, re-signs and
+          # then verifies nothing points outside the bundle. Use it instead of
+          # hand-rolled fixups so we inherit upstream's packaging changes as
+          # the build system evolves.
+          #
+          # Upstream retired that script in ef1da958 (2026-10-23): it was
+          # renamed package-macos-test-bundle.py and reworked for a vcpkg-built
+          # static Qt, which this Homebrew-Qt `Release` build does not produce.
+          # Fetch the last revision that matches this build, pinned to the
+          # commit before the rename, so a later upstream edit cannot silently
+          # change what we ship.
+          curl -fsSL -o "$RUNNER_TEMP/package-macos-app-bundle.py" \
+            "https://raw.githubusercontent.com/LadybirdBrowser/ladybird/ef22931735af84de985856b1eb85e1d69ec71005/Meta/package-macos-app-bundle.py"
           cmake --install Build/release --prefix "$RUNNER_TEMP/install" --strip
-          python3 Meta/package-macos-app-bundle.py \
+          python3 "$RUNNER_TEMP/package-macos-app-bundle.py" \
             --build-dir Build/release \
             --install-dir "$RUNNER_TEMP/install" \
             --output "$RUNNER_TEMP/Ladybird-macos-arm64.tar.gz"
