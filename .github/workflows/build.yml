@@ -45,7 +45,13 @@ env:
   # Pinned 2026-11-05: upstream master broke the Rust `ak` crate
   # (fetch_update -> try_update rename) and retired the macOS app-bundle
   # packager. Last green build was 2026-10-25 (run 40171961304).
-  LADYBIRD_REF: 65bf681c8bff86e34b54a1109916cc778abb342a
+  # Unpinned 2026-11-06: the `ak` failure was toolchain drift, not source - the
+  # install step now uses the runner's rustup so rust-toolchain.toml (1.98.0)
+  # is honored instead of Homebrew's newer rustc - and the package step fetches
+  # the pre-rename packager revision itself, so it no longer depends on which
+  # commit is checked out. Back to building current upstream on purpose; if
+  # something upstream-only breaks again, re-pin here to a last known-good SHA.
+  LADYBIRD_REF: master
 
 jobs:
   build:
@@ -205,10 +211,16 @@ jobs:
           # Contents/lib, re-signs and then verifies nothing points outside
           # the bundle. Use it instead of hand-rolled fixups so we inherit
           # upstream's packaging changes as the build system evolves.
-          # (Pinned LADYBIRD_REF above keeps this script at the pre-rename
-          # revision; upstream retired it in ef1da958 on 2026-10-23.)
+          # Upstream retired that script in ef1da958 (2026-10-23): it was
+          # renamed package-macos-test-bundle.py and reworked for a vcpkg-built
+          # static Qt, which this Homebrew-Qt `Release` build does not produce.
+          # Fetch the last revision that matches this build, pinned to the
+          # commit before the rename, so a later upstream edit cannot silently
+          # change what we ship - and so this step works from any LADYBIRD_REF.
+          curl -fsSL -o "$RUNNER_TEMP/package-macos-app-bundle.py" \
+            "https://raw.githubusercontent.com/LadybirdBrowser/ladybird/ef22931735af84de985856b1eb85e1d69ec71005/Meta/package-macos-app-bundle.py"
           cmake --install Build/release --prefix "$RUNNER_TEMP/install" --strip
-          python3 Meta/package-macos-app-bundle.py \
+          python3 "$RUNNER_TEMP/package-macos-app-bundle.py" \
             --build-dir Build/release \
             --install-dir "$RUNNER_TEMP/install" \
             --output "$RUNNER_TEMP/Ladybird-macos-arm64.tar.gz"
