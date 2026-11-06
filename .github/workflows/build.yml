@@ -119,7 +119,26 @@ jobs:
           # (Homebrew `qt`, currently 6.11) is a required build dependency, not
           # just an alternative to the AppKit chrome.
           brew install autoconf autoconf-archive automake ccache cmake \
-            libtool nasm ninja pkg-config qt rust llvm@21
+            libtool nasm ninja pkg-config qt llvm@21
+          # Rust deliberately comes from the runner's rustup, NOT Homebrew:
+          # upstream pins its compiler in rust-toolchain.toml (1.98.0 at the
+          # time of writing) and only rustup's shims honor that file. Homebrew's
+          # `rust` is a standalone toolchain that shadows them on PATH, and its
+          # newer std marks Atomic::fetch_update deprecated - promoted to a hard
+          # error by -Dwarnings (Meta/CMake/rust_crate.cmake) in the `ak` crate.
+          # That is what broke runs 42127412571 and 42168687482 on 2026-11-06,
+          # and no source pin can fix it: the source was fine, the compiler
+          # drifted. The macos-15 image ships rustup 1.29 with 1.98.0 already
+          # installed, so this matches upstream exactly; if the image ever drops
+          # it, fail here rather than deep inside the build.
+          command -v rustup >/dev/null 2>&1 || {
+            echo "::error::rustup not found on the runner image; rust-toolchain.toml would be ignored"
+            exit 1
+          }
+          # Resolves rust-toolchain.toml (rustup auto-installs a missing
+          # pinned toolchain) and prints the compiler that will be used, so a
+          # wrong toolchain is visible in the log before the build.
+          (cd ladybird && rustc --version && rustup show active-toolchain)
 
       - name: Configure ccache
         run: |
