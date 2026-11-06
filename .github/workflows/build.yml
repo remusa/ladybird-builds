@@ -50,7 +50,11 @@ env:
 jobs:
   build:
     runs-on: macos-15   # Apple Silicon (arm64) by default on GitHub-hosted runners
-    timeout-minutes: 300
+    # A healthy build finishes in 1h30m-2h even with a cold ccache (the slowest
+    # green run was 1h57m), so 5h only ever bought a hung download more time.
+    # 2026-11-06: run 42133163115 sat on one stalled vcpkg download for 4h50m
+    # and was killed by the old 300-minute cap having compiled nothing.
+    timeout-minutes: 240
 
     steps:
       - name: Self-test failure
@@ -136,10 +140,42 @@ jobs:
           # ladybird.py drives the CMake+vcpkg+ninja build end to end.
           # Check Documentation/BuildInstructionsLadybird.md in the source tree
           # if this invocation drifts from upstream's current expectations.
+          #
+          # vcpkg sets no curl connect or read timeout (see
+          # vcpkg-tool src/vcpkg/base/downloads.cpp - no CURLOPT_CONNECTTIMEOUT,
+          # no CURLOPT_LOW_SPEED_*), so a stalled connection to the source-asset
+          # mirror hangs forever instead of erroring. On 2026-11-06 the openssl
+          # 3.6.5 tarball did exactly that and burned 4h50m of the job budget
+          # with zero compilation. Run the build in the background and kill it
+          # after 15 minutes without a single new line of output, so a dead
+          # mirror costs minutes instead of the whole run.
           export PATH="/opt/homebrew/opt/llvm@21/bin:$PATH"
+          LOG="$RUNNER_TEMP/build.log"
+          STALL_SECONDS=$((15 * 60))
+          : > "$LOG"
           CC="$(brew --prefix llvm@21)/bin/clang" \
           CXX="$(brew --prefix llvm@21)/bin/clang++" \
-          ./Meta/ladybird.py build
+          ./Meta/ladybird.py build > "$LOG" 2>&1 &
+          BUILD_PID=$!
+          PRINTED=0
+          LAST_GROWTH=$(date +%s)
+          while kill -0 "$BUILD_PID" 2>/dev/null; do
+            sleep 30
+            TOTAL=$(wc -l < "$LOG" | tr -d ' ')
+            if [ "$TOTAL" -gt "$PRINTED" ]; then
+              tail -n "+$((PRINTED + 1))" "$LOG"
+              PRINTED=$TOTAL
+              LAST_GROWTH=$(date +%s)
+            elif [ $(($(date +%s) - LAST_GROWTH)) -gt "$STALL_SECONDS" ]; then
+              echo "::error::build printed nothing for $((STALL_SECONDS / 60)) minutes - a download has stalled. Killing it; re-dispatch to retry."
+              kill -TERM "$BUILD_PID" 2>/dev/null || true
+              sleep 10
+              kill -KILL "$BUILD_PID" 2>/dev/null || true
+              exit 1
+            fi
+          done
+          # Propagates the build's own exit status (and re-prints nothing).
+          wait "$BUILD_PID"
 
       - name: Package .app bundle
         working-directory: ladybird
