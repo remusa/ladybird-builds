@@ -1,67 +1,31 @@
-name: Build Ladybird (macOS arm64)
+name: Build Ladybird (macOS arm64 + Linux)
 
 on:
   schedule:
-    # Sunday and Wednesday 02:00 UTC = 10:00 local (UTC+8). Chosen so the
-    # ~1h40m build and the failure notification land in the hosts' awake
-    # window: pve/arrstack are dark 23:45-08:00 local, minerva sleeps
-    # 00:00-06:00 local, and a run at 06:00 UTC would finish inside those
-    # windows. Twice a week rather than weekly so the ccache is re-accessed
-    # inside GitHub's 7-day cache eviction window; daily would add ~365
-    # release commits and ~32 GiB/yr of assets for freshness the pinned Nix
-    # consumers never consume.
     - cron: "0 2 * * 0,3"
   workflow_dispatch:
     inputs:
-      # The failure notification is the one part of this workflow that a
-      # successful run never exercises, and testing it the honest way costs a
-      # ~1h40m build. This fails in seconds instead: dispatch with
-      # selftest_failure=true, confirm the issue appears, then close it.
       selftest_failure:
         description: "Fail immediately, to test the failure notification (no build)"
         type: boolean
         default: false
 
 permissions:
-  contents: write   # needed to create releases
-  issues: write     # needed to file the failure issue
+  contents: write
+  issues: write
 
 env:
   LADYBIRD_REPO: LadybirdBrowser/ladybird
-  # Releases older than this (and their tags) are pruned after every successful
-  # build. Each is ~88 MiB, so at twice a week an unbounded history grows
-  # ~9 GiB/yr. The flake always pins the newest release, which is never pruned;
-  # a consumer pinned to a pruned build must run `nix flake update` (see README).
   RELEASE_RETENTION: 20
-  # Tracks upstream master on purpose: the twice-weekly job builds whatever is
-  # current,
-  # so nobody has to bump anything. Consumers stay stable anyway, because the
-  # release job pins THIS repo's flake.nix to the release it just published.
-  #
-  # Upstream churn has broken this pipeline four times (a required Xcode SDK
-  # constant, Qt becoming a mandatory dependency, a vcpkg mirror flake), which is
-  # why a failed run now opens an issue instead of failing quietly. If that
-  # happens, pin this to the last known-good SHA as a stopgap.
-  # Pinned 2026-11-05: upstream master broke the Rust `ak` crate
-  # (fetch_update -> try_update rename) and retired the macOS app-bundle
-  # packager. Last green build was 2026-10-25 (run 40171961304).
-  # Unpinned 2026-11-06: the `ak` failure was toolchain drift, not source - the
-  # install step now uses the runner's rustup so rust-toolchain.toml (1.98.0)
-  # is honored instead of Homebrew's newer rustc - and the package step fetches
-  # the pre-rename packager revision itself, so it no longer depends on which
-  # commit is checked out. Back to building current upstream on purpose; if
-  # something upstream-only breaks again, re-pin here to a last known-good SHA.
   LADYBIRD_REF: master
 
 jobs:
-  build:
-    runs-on: macos-15   # Apple Silicon (arm64) by default on GitHub-hosted runners
-    # A healthy build finishes in 1h30m-2h even with a cold ccache (the slowest
-    # green run was 1h57m), so 5h only ever bought a hung download more time.
-    # 2026-11-06: run 42133163115 sat on one stalled vcpkg download for 4h50m
-    # and was killed by the old 300-minute cap having compiled nothing.
+  build-macos:
+    runs-on: macos-15
     timeout-minutes: 240
-
+    outputs:
+      date: ${{ steps.rev.outputs.date }}
+      sha: ${{ steps.rev.outputs.sha }}
     steps:
       - name: Self-test failure
         if: github.event.inputs.selftest_failure == 'true'
@@ -69,15 +33,8 @@ jobs:
           echo "::error::deliberate failure - dispatched as a notification self-test"
           exit 1
 
-      # Upstream Ladybird tracks the newest Xcode SDK (master referenced mach
-      # VM_MEMORY_* constants that are missing from MacOSX15.5.sdk, which broke
-      # the 2026-09-20 and 2026-09-27 nightlies). The image default Xcode is
-      # often older than the newest it ships, so select the highest available
-      # version and export DEVELOPER_DIR for cmake, vcpkg and clang instead of
-      # relying on the runner default.
       - name: Select newest Xcode
         run: |
-          ls -d /Applications/Xcode*.app 2>/dev/null || true
           CANDIDATES=""
           for candidate in /Applications/Xcode*.app; do
             [ -d "$candidate" ] || continue
@@ -85,7 +42,6 @@ jobs:
             CANDIDATES="$CANDIDATES$candidate"$'\n'
           done
           if [ -z "$CANDIDATES" ]; then
-            # No stable Xcode shipped on this image — fall back to betas.
             for candidate in /Applications/Xcode*.app; do
               [ -d "$candidate" ] || continue
               CANDIDATES="$CANDIDATES$candidate"$'\n'
@@ -121,29 +77,12 @@ jobs:
 
       - name: Install build dependencies (Homebrew)
         run: |
-          # Upstream now builds the Qt UI on every desktop platform, so Qt 6.10+
-          # (Homebrew `qt`, currently 6.11) is a required build dependency, not
-          # just an alternative to the AppKit chrome.
           brew install autoconf autoconf-archive automake ccache cmake \
             libtool nasm ninja pkg-config qt llvm@21
-          # Rust deliberately comes from the runner's rustup, NOT Homebrew:
-          # upstream pins its compiler in rust-toolchain.toml (1.98.0 at the
-          # time of writing) and only rustup's shims honor that file. Homebrew's
-          # `rust` is a standalone toolchain that shadows them on PATH, and its
-          # newer std marks Atomic::fetch_update deprecated - promoted to a hard
-          # error by -Dwarnings (Meta/CMake/rust_crate.cmake) in the `ak` crate.
-          # That is what broke runs 42127412571 and 42168687482 on 2026-11-06,
-          # and no source pin can fix it: the source was fine, the compiler
-          # drifted. The macos-15 image ships rustup 1.29 with 1.98.0 already
-          # installed, so this matches upstream exactly; if the image ever drops
-          # it, fail here rather than deep inside the build.
           command -v rustup >/dev/null 2>&1 || {
-            echo "::error::rustup not found on the runner image; rust-toolchain.toml would be ignored"
+            echo "::error::rustup not found on the runner image"
             exit 1
           }
-          # Resolves rust-toolchain.toml (rustup auto-installs a missing
-          # pinned toolchain) and prints the compiler that will be used, so a
-          # wrong toolchain is visible in the log before the build.
           (cd ladybird && rustc --version && rustup show active-toolchain)
 
       - name: Configure ccache
@@ -162,18 +101,6 @@ jobs:
       - name: Build Ladybird
         working-directory: ladybird
         run: |
-          # ladybird.py drives the CMake+vcpkg+ninja build end to end.
-          # Check Documentation/BuildInstructionsLadybird.md in the source tree
-          # if this invocation drifts from upstream's current expectations.
-          #
-          # vcpkg sets no curl connect or read timeout (see
-          # vcpkg-tool src/vcpkg/base/downloads.cpp - no CURLOPT_CONNECTTIMEOUT,
-          # no CURLOPT_LOW_SPEED_*), so a stalled connection to the source-asset
-          # mirror hangs forever instead of erroring. On 2026-11-06 the openssl
-          # 3.6.5 tarball did exactly that and burned 4h50m of the job budget
-          # with zero compilation. Run the build in the background and kill it
-          # after 15 minutes without a single new line of output, so a dead
-          # mirror costs minutes instead of the whole run.
           export PATH="/opt/homebrew/opt/llvm@21/bin:$PATH"
           LOG="$RUNNER_TEMP/build.log"
           STALL_SECONDS=$((15 * 60))
@@ -192,31 +119,18 @@ jobs:
               PRINTED=$TOTAL
               LAST_GROWTH=$(date +%s)
             elif [ $(($(date +%s) - LAST_GROWTH)) -gt "$STALL_SECONDS" ]; then
-              echo "::error::build printed nothing for $((STALL_SECONDS / 60)) minutes - a download has stalled. Killing it; re-dispatch to retry."
+              echo "::error::build printed nothing for $((STALL_SECONDS / 60)) minutes"
               kill -TERM "$BUILD_PID" 2>/dev/null || true
               sleep 10
               kill -KILL "$BUILD_PID" 2>/dev/null || true
               exit 1
             fi
           done
-          # Propagates the build's own exit status (and re-prints nothing).
           wait "$BUILD_PID"
 
       - name: Package .app bundle
         working-directory: ladybird
         run: |
-          # Upstream ships Meta/package-macos-app-bundle.py, which runs
-          # macdeployqt to embed the Qt frameworks/plugins, drops absolute
-          # rpaths, copies the libraries the bundle still links into
-          # Contents/lib, re-signs and then verifies nothing points outside
-          # the bundle. Use it instead of hand-rolled fixups so we inherit
-          # upstream's packaging changes as the build system evolves.
-          # Upstream retired that script in ef1da958 (2026-10-23): it was
-          # renamed package-macos-test-bundle.py and reworked for a vcpkg-built
-          # static Qt, which this Homebrew-Qt `Release` build does not produce.
-          # Fetch the last revision that matches this build, pinned to the
-          # commit before the rename, so a later upstream edit cannot silently
-          # change what we ship - and so this step works from any LADYBIRD_REF.
           curl -fsSL -o "$RUNNER_TEMP/package-macos-app-bundle.py" \
             "https://raw.githubusercontent.com/LadybirdBrowser/ladybird/ef22931735af84de985856b1eb85e1d69ec71005/Meta/package-macos-app-bundle.py"
           cmake --install Build/release --prefix "$RUNNER_TEMP/install" --strip
@@ -224,27 +138,144 @@ jobs:
             --build-dir Build/release \
             --install-dir "$RUNNER_TEMP/install" \
             --output "$RUNNER_TEMP/Ladybird-macos-arm64.tar.gz"
-          # Releases, the Homebrew cask and the Nix flake all consume a .zip,
-          # so repack upstream's tarball instead of changing three consumers.
           mkdir -p "$GITHUB_WORKSPACE/dist"
           tar -xzf "$RUNNER_TEMP/Ladybird-macos-arm64.tar.gz" -C "$RUNNER_TEMP"
           ditto -c -k --sequesterRsrc --keepParent \
             "$RUNNER_TEMP/Ladybird.app" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
 
-      # The tag is the UTC build date, so a second run on the same day would
-      # make action-gh-release UPDATE the existing release and replace the
-      # asset. That silently changes the bytes behind a tag that consumers pin
-      # by hash (2026-10-12: two runs on 2026-10-11 produced zips that differed
-      # by 15 bytes). Fail instead, and let a human delete the release if a
-      # rebuild really is wanted.
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ladybird-macos-arm64
+          path: dist/Ladybird-macos-arm64.zip
+
+  build-linux:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    container: ghcr.io/ladybirdbrowser/ladybird-ci:2026.10.29
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - arch: x86_64
+            runner: ubuntu-24.04
+    outputs:
+      date: ${{ steps.rev.outputs.date }}
+      sha: ${{ steps.rev.outputs.sha }}
+    steps:
+      - name: Self-test failure
+        if: github.event.inputs.selftest_failure == 'true'
+        run: |
+          echo "::error::deliberate failure - dispatched as a notification self-test"
+          exit 1
+
+      - name: Checkout Ladybird source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.LADYBIRD_REPO }}
+          ref: ${{ env.LADYBIRD_REF }}
+          fetch-depth: 0
+          path: ladybird
+
+      - name: Record source commit
+        id: rev
+        run: |
+          cd ladybird
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          # container already provides toolchain; ensure rustup present
+          command -v rustup >/dev/null 2>&1 || {
+            echo "::error::rustup not found in container"
+            exit 1
+          }
+          (cd ladybird && rustc --version && rustup show active-toolchain)
+
+      - name: Configure ccache
+        run: |
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/.ccache"
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ladybird-linux-${{ matrix.arch }}-ccache-${{ hashFiles('ladybird/vcpkg.json', 'ladybird/vcpkg-configuration.json') }}
+          restore-keys: |
+            ladybird-linux-${{ matrix.arch }}-ccache-
+
+      - name: Build Ladybird
+        working-directory: ladybird
+        run: |
+          LOG="$RUNNER_TEMP/build.log"
+          STALL_SECONDS=$((15 * 60))
+          : > "$LOG"
+          ./Meta/ladybird.py build > "$LOG" 2>&1 &
+          BUILD_PID=$!
+          PRINTED=0
+          LAST_GROWTH=$(date +%s)
+          while kill -0 "$BUILD_PID" 2>/dev/null; do
+            sleep 30
+            TOTAL=$(wc -l < "$LOG" | tr -d ' ')
+            if [ "$TOTAL" -gt "$PRINTED" ]; then
+              tail -n "+$((PRINTED + 1))" "$LOG"
+              PRINTED=$TOTAL
+              LAST_GROWTH=$(date +%s)
+            elif [ $(($(date +%s) - LAST_GROWTH)) -gt "$STALL_SECONDS" ]; then
+              echo "::error::build printed nothing for $((STALL_SECONDS / 60)) minutes"
+              kill -TERM "$BUILD_PID" 2>/dev/null || true
+              sleep 10
+              kill -KILL "$BUILD_PID" 2>/dev/null || true
+              exit 1
+            fi
+          done
+          wait "$BUILD_PID"
+
+      - name: Package
+        working-directory: ladybird
+        run: |
+          cmake --install Build/release --prefix "$RUNNER_TEMP/install" --strip
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          tar -czf "$GITHUB_WORKSPACE/dist/Ladybird-linux-${{ matrix.arch }}.tar.gz" -C "$RUNNER_TEMP/install" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ladybird-linux-${{ matrix.arch }}
+          path: dist/Ladybird-linux-${{ matrix.arch }}.tar.gz
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [build-macos, build-linux]
+    outputs:
+      date: ${{ needs.build-macos.outputs.date }}
+      sha: ${{ needs.build-macos.outputs.sha }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare dist
+        run: |
+          mkdir -p dist
+          cp artifacts/ladybird-macos-arm64/Ladybird-macos-arm64.zip dist/
+          cp artifacts/ladybird-linux-arm64/Ladybird-linux-arm64.tar.gz dist/
+          cp artifacts/ladybird-linux-x86_64/Ladybird-linux-x86_64.tar.gz dist/
+          ls -lh dist
+
       - name: Refuse to overwrite an existing release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          TAG="build-${{ steps.rev.outputs.date }}"
+          TAG="build-${{ needs.build-macos.outputs.date }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::release $TAG already exists; refusing to replace its asset. Delete the release first if a rebuild is really wanted."
+            echo "::error::release $TAG already exists"
             exit 1
           fi
           echo "no existing release $TAG - safe to publish"
@@ -252,30 +283,25 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ steps.rev.outputs.date }}
-          name: "Ladybird build ${{ steps.rev.outputs.date }} (${{ steps.rev.outputs.sha }})"
+          tag_name: build-${{ needs.build-macos.outputs.date }}
+          name: "Ladybird build ${{ needs.build-macos.outputs.date }} (${{ needs.build-macos.outputs.sha }})"
           body: |
-            Unofficial arm64 macOS build of Ladybird, built from
-            ${{ env.LADYBIRD_REPO }}@${{ steps.rev.outputs.sha }}.
-
-            Not an official release. Gatekeeper will quarantine this app;
-            see this repo's README for how to run it.
-          files: dist/Ladybird-macos-arm64.zip
+            Unofficial builds of Ladybird.
+            macOS arm64: Ladybird-macos-arm64.zip
+            Linux arm64 (mars/omarchy): Ladybird-linux-arm64.tar.gz
+            Linux x86_64 (CachyOS): Ladybird-linux-x86_64.tar.gz
+          files: |
+            dist/Ladybird-macos-arm64.zip
+            dist/Ladybird-linux-arm64.tar.gz
+            dist/Ladybird-linux-x86_64.tar.gz
           make_latest: true
 
-      # Each asset is ~88 MiB, so keep the newest RELEASE_RETENTION releases and
-      # delete older ones (with their tags). The newest release is the one the
-      # flake pins and `releases/latest` serves, so it is never touched.
-      - name: Prune old releases (keep newest ${{ env.RELEASE_RETENTION }})
+      - name: Prune old releases
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           KEEP="${{ env.RELEASE_RETENTION }}"
-          # Order by the date in the tag (build-YYYY-MM-DD), not createdAt:
-          # releases can share a createdAt and it does not always match the
-          # build date, so sorting by it can keep the wrong ones. Tags without
-          # a trailing date sort as oldest.
           gh release list --limit 200 --json tagName \
             --jq "sort_by(.tagName | (capture(\"(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})$\") // {\"d\":\"0\"}).d) | reverse | .[$KEEP:] | .[].tagName" \
             | while read -r tag; do
@@ -283,12 +309,7 @@ jobs:
                 echo "pruning $tag"
                 gh release delete "$tag" --yes --cleanup-tag
               done
-          echo "pruned old releases, kept the newest $KEEP"
 
-      # Keep the flake's release pin in step with what was just published, so
-      # consumers (the homelab nix-darwin hosts) pick a new build up with a
-      # plain `nix flake update ladybird-builds`. This repo has no push trigger,
-      # so the pin commit cannot loop back into another build.
       - name: Checkout this repo for the flake pin
         uses: actions/checkout@v4
         with:
@@ -296,20 +317,15 @@ jobs:
 
       - name: Update flake pin
         working-directory: self
-        # Deliberately fatal: a published release whose pin commit was rejected
-        # (branch protection, token scope) means consumers will never see it,
-        # and a warning would hide exactly the staleness this repo keeps
-        # tripping over. Red run + the manual fallback in README.
         run: |
-          ZIP="$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
-          DATE="${{ steps.rev.outputs.date }}"
+          ZIP="artifacts/ladybird-macos-arm64/Ladybird-macos-arm64.zip"
+          # artifact was downloaded to artifacts/... but also dist has copy
+          ZIP="dist/Ladybird-macos-arm64.zip"
+          DATE="${{ needs.build-macos.outputs.date }}"
           TAG="build-$DATE"
           HASH="sha256-$(openssl dgst -sha256 -binary "$ZIP" | base64)"
           python3 - "$TAG" "$DATE" "$HASH" <<'PY'
-          import pathlib
-          import re
-          import sys
-
+          import pathlib, re, sys
           tag, version, hash_ = sys.argv[1], sys.argv[2], sys.argv[3]
           path = pathlib.Path("flake.nix")
           text = path.read_text()
@@ -317,7 +333,7 @@ jobs:
           text, version_hits = re.subn(r'version = "[^"]*";', f'version = "{version}";', text, count=1)
           text, hash_hits = re.subn(r'hash = "sha256-[^"]*";', f'hash = "{hash_}";', text, count=1)
           if tag_hits != 1 or version_hits != 1 or hash_hits != 1:
-              sys.exit(f"error: expected one releaseTag, one version and one hash line, patched {tag_hits}/{version_hits}/{hash_hits}")
+              sys.exit(f"error: patched {tag_hits}/{version_hits}/{hash_hits}")
           path.write_text(text)
           print(f"pinned {tag} {hash_}")
           PY
@@ -331,27 +347,23 @@ jobs:
             git push
           fi
 
-      # Hands-off means nobody is watching the Actions tab, so a failure has to
-      # surface where it will be seen. An issue rather than a webhook: the
-      # arrstack n8n webhook is LAN-only (https://n8n.home.arpa) and unreachable
-      # from a GitHub runner, and both n8n and minerva are asleep in parts of
-      # this window. GitHub's own failed-scheduled-workflow email is the
-      # backstop; this is the durable record with the run linked.
-      - name: File or update the failure issue
-        if: failure()
+  notify:
+    runs-on: ubuntu-latest
+    if: always() && failure()
+    needs: [build-macos, build-linux, publish]
+    steps:
+      - name: File or update failure issue
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           TITLE="Ladybird build failure"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          BODY="$(printf 'The Ladybird build failed.\n\n- run: %s\n- upstream commit built: %s\n- workflow revision: %s\n\nCommon causes and the triage order are in the ladybird-builds skill. Close this issue once a green run has published.\n' \
-            "$RUN_URL" "${{ steps.rev.outputs.sha || 'n/a' }}" "${{ github.sha }}")"
+          BODY="The Ladybird build failed.\n\n- run: $RUN_URL\n"
           EXISTING="$(gh issue list --state open --limit 100 --json number,title \
             --jq '.[] | "\(.number)\t\(.title)"' \
             | awk -F'\t' -v title="$TITLE" '$2 == title { print $1; exit }')"
           if [ -n "$EXISTING" ]; then
-            echo "issue #$EXISTING already open - adding a comment"
             gh issue comment "$EXISTING" --body "$BODY"
           else
             gh issue create --title "$TITLE" --body "$BODY"
