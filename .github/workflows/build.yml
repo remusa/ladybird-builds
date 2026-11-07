@@ -91,7 +91,7 @@ jobs:
           mkdir -p "$HOME/.ccache"
 
       - name: Cache ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.ccache
           key: ladybird-macos-arm64-ccache-${{ hashFiles('ladybird/vcpkg.json', 'ladybird/vcpkg-configuration.json') }}
@@ -201,7 +201,7 @@ jobs:
           mkdir -p "$HOME/.ccache"
 
       - name: Cache ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.ccache
           key: ladybird-linux-${{ matrix.arch }}-ccache-${{ hashFiles('ladybird/vcpkg.json', 'ladybird/vcpkg-configuration.json') }}
