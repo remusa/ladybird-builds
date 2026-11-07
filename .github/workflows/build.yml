@@ -231,17 +231,20 @@ jobs:
       - name: Build Ladybird
         working-directory: ladybird
         run: |
-          # See the macOS build step: keep the shipped binaries on a named CPU
+          # ladybird.py exits early as root ("Do not run ladybird.py as root") and a
+          # container job IS root, so drive cmake directly, exactly like upstream's
+          # own CI does inside this same image. That also gives us a place to pass
+          # -DENABLE_CI_BASELINE_CPU=ON: keep the shipped binaries on a named CPU
           # baseline (armv8.2-a / x86-64-v2) instead of -march=native on the runner.
-          sed -i.bak 's/\(ENABLE_CI_BASELINE_CPU .*\) OFF)/\1 ON)/' Meta/CMake/cmake_options.cmake
-          grep -q 'ENABLE_CI_BASELINE_CPU ".*" ON)' Meta/CMake/cmake_options.cmake || {
-            echo "::error::could not enable ENABLE_CI_BASELINE_CPU in Meta/CMake/cmake_options.cmake"
-            exit 1
-          }
           LOG="$RUNNER_TEMP/build.log"
           STALL_SECONDS=$((15 * 60))
           : > "$LOG"
-          ./Meta/ladybird.py build > "$LOG" 2>&1 &
+          (
+            cmake --preset Release -DENABLE_CI_BASELINE_CPU=ON \
+              -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+              -DPKG_CONFIG_EXECUTABLE="$(command -v pkg-config)"
+            cmake --build --preset Release -j "$(nproc)"
+          ) > "$LOG" 2>&1 &
           BUILD_PID=$!
           PRINTED=0
           LAST_GROWTH=$(date +%s)
