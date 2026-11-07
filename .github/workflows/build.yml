@@ -61,7 +61,7 @@ jobs:
           xcrun --show-sdk-path
 
       - name: Checkout Ladybird source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.LADYBIRD_REPO }}
           ref: ${{ env.LADYBIRD_REF }}
@@ -172,7 +172,7 @@ jobs:
           exit 1
 
       - name: Checkout Ladybird source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.LADYBIRD_REPO }}
           ref: ${{ env.LADYBIRD_REF }}
@@ -311,7 +311,7 @@ jobs:
               done
 
       - name: Checkout this repo for the flake pin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: self
 
