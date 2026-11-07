@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Workflow action pins. Renovate is configured for Nix only (see
+  # renovate.json) — Dependabot owns github-actions here because the Mend app
+  # was never installed on this repo, so Renovate never opened a PR.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

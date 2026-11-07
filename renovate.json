@@ -4,15 +4,13 @@
   "nix": {
     "enabled": true
   },
+  "github-actions": {
+    "enabled": false
+  },
   "packageRules": [
     {
       "matchManagers": ["nix"],
       "groupName": "nixpkgs",
-      "schedule": ["before 6am on monday"]
-    },
-    {
-      "matchManagers": ["github-actions"],
-      "groupName": "github-actions",
       "schedule": ["before 6am on monday"]
     }
   ]
