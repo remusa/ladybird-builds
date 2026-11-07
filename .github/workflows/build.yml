@@ -240,6 +240,15 @@ jobs:
           STALL_SECONDS=$((15 * 60))
           : > "$LOG"
           (
+            # vcpkg's prebuilt binaries are not published for arm64 Linux.
+            if [ "${{ matrix.arch }}" = "arm64" ]; then
+              export VCPKG_FORCE_SYSTEM_BINARIES=1
+            fi
+            # Bootstrap vcpkg into Build/vcpkg-release, as upstream's own CI does.
+            # This subcommand returns before ladybird.py's root guard, so it is the
+            # one part of that script usable in a root container. It also puts the
+            # vcpkg toolchain file CMakeLists.txt requires in place.
+            ./Meta/ladybird.py vcpkg --preset Release
             cmake --preset Release -DENABLE_CI_BASELINE_CPU=ON \
               -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
               -DPKG_CONFIG_EXECUTABLE="$(command -v pkg-config)"
