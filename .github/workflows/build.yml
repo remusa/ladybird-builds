@@ -144,7 +144,7 @@ jobs:
             "$RUNNER_TEMP/Ladybird.app" "$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ladybird-macos-arm64
           path: dist/Ladybird-macos-arm64.zip
@@ -243,7 +243,7 @@ jobs:
           tar -czf "$GITHUB_WORKSPACE/dist/Ladybird-linux-${{ matrix.arch }}.tar.gz" -C "$RUNNER_TEMP/install" .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ladybird-linux-${{ matrix.arch }}
           path: dist/Ladybird-linux-${{ matrix.arch }}.tar.gz
