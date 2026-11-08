@@ -18,6 +18,12 @@ env:
   LADYBIRD_REPO: LadybirdBrowser/ladybird
   RELEASE_RETENTION: 20
   LADYBIRD_REF: master
+  # Upstream builds a content-addressed venv of requirements.txt mid-build
+  # (Meta/Utils/python_environment.py). A single PyPI hiccup there fails the whole
+  # job — run 42463158949 lost all three jobs to `HTTP Error 504: Gateway Time-out`
+  # while installing it. pip honors both knobs, and the venv is cached per job below.
+  PIP_RETRIES: "10"
+  PIP_TIMEOUT: "60"
 
 jobs:
   build-macos:
@@ -84,6 +90,16 @@ jobs:
             exit 1
           }
           (cd ladybird && rustc --version && rustup show active-toolchain)
+
+      - name: Cache Python environment
+        uses: actions/cache@v6
+        with:
+          # Build/venv is keyed by requirements.txt + interpreter, so it survives across
+          # runs on the same runner image; a hit skips the PyPI install entirely.
+          path: ladybird/Build/venv
+          key: ladybird-macos-arm64-venv-${{ hashFiles('ladybird/requirements.txt') }}
+          restore-keys: |
+            ladybird-macos-arm64-venv-
 
       - name: Configure ccache
         run: |
@@ -214,6 +230,14 @@ jobs:
           fi
           echo "PATH=$PATH" >> "$GITHUB_ENV"
           (cd ladybird && rustc --version && rustup show active-toolchain)
+
+      - name: Cache Python environment
+        uses: actions/cache@v6
+        with:
+          path: ladybird/Build/venv
+          key: ladybird-linux-${{ matrix.arch }}-venv-${{ hashFiles('ladybird/requirements.txt') }}
+          restore-keys: |
+            ladybird-linux-${{ matrix.arch }}-venv-
 
       - name: Configure ccache
         run: |
