@@ -20,7 +20,7 @@
       #   nix store prefetch-file --json --hash-type sha256 <release-zip-url>
       releaseTag = "build-2026-11-07";
       version = "2026-11-07";
-      hash = "sha256-";
+      hash = "sha256-6fQD9RcE05afPqRuiRk0FE2J1jUGba831bLo56x2c+g=";
       # ------------------------------------------------------------------
 
       ladybird = pkgs.stdenvNoCC.mkDerivation {

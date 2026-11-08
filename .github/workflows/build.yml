@@ -357,12 +357,19 @@ jobs:
       - name: Update flake pin
         working-directory: self
         run: |
-          ZIP="artifacts/ladybird-macos-arm64/Ladybird-macos-arm64.zip"
-          # artifact was downloaded to artifacts/... but also dist has copy
-          ZIP="dist/Ladybird-macos-arm64.zip"
+          # Absolute: this step runs in self/, but dist/ is in the workspace root, so a
+          # relative path silently hashed nothing and pinned "sha256-" (run 42425321795
+          # shipped that pin). Hash failures below are now fatal instead of swallowed by
+          # a pipeline whose exit status is base64's.
+          ZIP="$GITHUB_WORKSPACE/dist/Ladybird-macos-arm64.zip"
+          test -f "$ZIP" || { echo "::error::$ZIP missing"; exit 1; }
           DATE="${{ needs.build-macos.outputs.date }}"
           TAG="build-$DATE"
           HASH="sha256-$(openssl dgst -sha256 -binary "$ZIP" | base64)"
+          case "$HASH" in
+            sha256-?*=) ;;
+            *) echo "::error::refusing to pin a bogus hash: '$HASH' from $ZIP"; exit 1 ;;
+          esac
           python3 - "$TAG" "$DATE" "$HASH" <<'PY'
           import pathlib, re, sys
           tag, version, hash_ = sys.argv[1], sys.argv[2], sys.argv[3]
