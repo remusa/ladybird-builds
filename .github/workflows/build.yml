@@ -344,7 +344,7 @@ jobs:
           echo "no existing release $TAG - safe to publish"
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: build-${{ needs.build-macos.outputs.date }}
           name: "Ladybird build ${{ needs.build-macos.outputs.date }} (${{ needs.build-macos.outputs.sha }})"
