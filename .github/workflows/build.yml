@@ -39,6 +39,11 @@ jobs:
           echo "::error::deliberate failure - dispatched as a notification self-test"
           exit 1
 
+      - name: Checkout packaging script
+        uses: actions/checkout@v7
+        with:
+          path: self
+
       - name: Select newest Xcode
         run: |
           CANDIDATES=""
@@ -159,8 +164,7 @@ jobs:
       - name: Package .app bundle
         working-directory: ladybird
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/package-macos-app-bundle.py" \
-            "https://raw.githubusercontent.com/LadybirdBrowser/ladybird/ef22931735af84de985856b1eb85e1d69ec71005/Meta/package-macos-app-bundle.py"
+          cp "$GITHUB_WORKSPACE/self/Meta/package-macos-app-bundle.py" "$RUNNER_TEMP/package-macos-app-bundle.py"
           cmake --install Build/release --prefix "$RUNNER_TEMP/install" --strip
           python3 "$RUNNER_TEMP/package-macos-app-bundle.py" \
             --build-dir Build/release \
