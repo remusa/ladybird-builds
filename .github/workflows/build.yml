@@ -130,9 +130,9 @@ jobs:
           # knob switches both compilers to a named baseline (apple-m1 here,
           # armv8.2-a / x86-64-v2 on Linux); ladybird.py cannot forward -D, so flip
           # the option default in the checkout and verify it took.
-          sed -i.bak 's/\(ENABLE_CI_BASELINE_CPU .*\) OFF)/\1 ON)/' Meta/CMake/cmake_options.cmake
-          grep -q 'ENABLE_CI_BASELINE_CPU ".*" ON)' Meta/CMake/cmake_options.cmake || {
-            echo "::error::could not enable ENABLE_CI_BASELINE_CPU in Meta/CMake/cmake_options.cmake"
+          sed -i.bak 's/\(LADYBIRD_BASELINE_CPU_TARGET .*\) OFF)/\1 ON)/' Meta/CMake/cmake_options.cmake
+          grep -q 'LADYBIRD_BASELINE_CPU_TARGET .* ON)' Meta/CMake/cmake_options.cmake || {
+            echo "::error::could not enable LADYBIRD_BASELINE_CPU_TARGET in Meta/CMake/cmake_options.cmake"
             exit 1
           }
           LOG="$RUNNER_TEMP/build.log"
@@ -277,7 +277,7 @@ jobs:
             # one part of that script usable in a root container. It also puts the
             # vcpkg toolchain file CMakeLists.txt requires in place.
             ./Meta/ladybird.py vcpkg --preset Release
-            cmake --preset Release -DENABLE_CI_BASELINE_CPU=ON \
+            cmake --preset Release -DLADYBIRD_BASELINE_CPU_TARGET=ON \
               -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
               -DPKG_CONFIG_EXECUTABLE="$(command -v pkg-config)"
             cmake --build --preset Release -j "$(nproc)"
