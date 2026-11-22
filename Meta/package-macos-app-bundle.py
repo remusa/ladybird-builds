@@ -161,7 +161,7 @@ def find_macdeployqt(explicit: Optional[Path]) -> Path:
     sys.exit("error: no macdeployqt found; pass --macdeployqt, or put Qt's bin directory on PATH")
 
 
-def deploy_qt(app: Path, search_directories: list[Path]) -> None:
+def deploy_qt(app: Path, search_directories: list[Path], build_directory: Path) -> None:
     """Deploy a Cocoa platform plugin matching the Qt the app was built against.
 
     The build links Qt from vcpkg (Contents/lib carries libQt6*.dylib), while a
@@ -170,13 +170,26 @@ def deploy_qt(app: Path, search_directories: list[Path]) -> None:
     libraries, so copy that one instead, and point Qt at Contents/PlugIns.
     """
     platform_plugin = None
-    for directory in search_directories:
-        for parent in [directory, *directory.parents]:
-            candidate = parent / "plugins" / "platforms" / "libqcocoa.dylib"
-            if candidate.is_file():
-                platform_plugin = candidate
-                break
+    search_roots = [args_build_directory] if False else []
+    # Search the vcpkg tree (and the build tree) recursively for the Cocoa platform plugin.
+    roots = [Path(build_directory)] if "build_directory" in globals() else []
+    roots += [d.parent for d in search_directories]
+    roots += list(search_directories)
+    seen_roots = set()
+    for root in roots:
+        root = root.resolve()
+        if root in seen_roots or not root.exists():
+            continue
+        seen_roots.add(root)
+        for candidate in root.rglob("libqcocoa.dylib"):
+            platform_plugin = candidate
+            break
         if platform_plugin is not None:
+            break
+    if platform_plugin is None:
+        # Last resort: search the current working tree.
+        for candidate in Path.cwd().rglob("libqcocoa.dylib"):
+            platform_plugin = candidate
             break
     if platform_plugin is None:
         sys.exit("error: no Cocoa platform plugin found in the vcpkg Qt tree")
@@ -330,7 +343,7 @@ def main() -> int:
     # Qt first, so that the passes below see its frameworks and plugins as part of the bundle. Then rpaths, so the
     # libraries the install laid down in Contents/lib count as found and only the vcpkg ones get copied; then rpaths
     # again for what was copied, since vcpkg's dylibs can carry absolute rpaths of their own.
-    deploy_qt(app, search_directories)
+    deploy_qt(app, search_directories, args.build_dir)
     rewritten = fix_rpaths(app)
     copied = copy_linked_libraries(app, search_directories)
     rewritten += fix_rpaths(app)
