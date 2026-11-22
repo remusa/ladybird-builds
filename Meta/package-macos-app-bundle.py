@@ -196,7 +196,8 @@ def deploy_qt(app: Path, search_directories: list[Path], build_directory: Path) 
     deployed_plugin = app / "Contents" / "PlugIns" / "platforms" / platform_plugin.name
     deployed_plugin.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(platform_plugin, deployed_plugin)
-
+    for entry in BUNDLE_RPATHS:
+        subprocess.run(["install_name_tool", "-add_rpath", entry, str(deployed_plugin)], capture_output=True)
     qt_conf = app / "Contents" / "Resources" / "qt.conf"
     qt_conf.parent.mkdir(parents=True, exist_ok=True)
     qt_conf.write_text("[Paths]\nPlugins = PlugIns\n")
@@ -216,16 +217,24 @@ def fix_rpaths(app: Path) -> list[Path]:
     for binary in bundle_binaries(app):
         entries = rpath_entries(binary)
         absolute = [entry for entry in entries if entry.startswith("/")]
-        missing = [entry for entry in BUNDLE_RPATHS if entry not in entries]
+        missing = (
+            [entry for entry in BUNDLE_RPATHS if entry not in entries] if binary.parent == executables_directory else []
+        )
         if not absolute and not missing:
             continue
         # One -delete_rpath removes one entry, and the build leaves duplicates, so delete each occurrence in turn.
         for entry in absolute:
             run("install_name_tool", "-delete_rpath", entry, str(binary))
         if missing:
-            run(
-                "install_name_tool", *(argument for entry in missing for argument in ("-add_rpath", entry)), str(binary)
-            )
+            for entry in missing:
+                result = subprocess.run(
+                    ["install_name_tool", "-add_rpath", entry, str(binary)],
+                    capture_output=True, text=True,
+                )
+                if result.returncode != 0 and entry not in rpath_entries(binary):
+                    # install_name_tool refuses to add a duplicate; treat that as success.
+                    if "already exists" not in (result.stderr or ""):
+                        print(f"warning: could not add rpath {entry} to {binary}: {result.stderr.strip()}")
         rewritten.append(binary)
     rpath_entries.cache_clear()
     return rewritten
