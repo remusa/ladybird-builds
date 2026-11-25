@@ -110,14 +110,19 @@ jobs:
         run: |
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
-          # 3G per job = 9G across the three build jobs, still inside GitHub's 10GB
-          # per-repo cache budget with the venvs included. 2G sat pinned at 99.96%
-          # with 157 cleanups per run, i.e. ccache spent the build evicting itself.
+          # 2.5G per job. The measured working set is ~1.85G (Linux) / ~1.47G
+          # (macOS) and it does not grow with a bigger cap, but 2G sat pinned at
+          # 99.96% with 157 cleanups per run because the cap equalled the working
+          # set, so ccache spent the build evicting itself. 3x2.5G = 7.5G of the
+          # 10GB per-repo cache budget, leaving room for the venvs and for one
+          # previous generation; 3G left no headroom and usage hit 11.4G, which
+          # makes GitHub evict whichever generation is least recently used.
+          # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
           # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
           # compiler_check=content: a fresh runner reinstalls the compiler each run
           # (brew on macOS), and the default mtime check would treat an identical
           # compiler as new and miss the whole archive.
-          ccache --max-size 3G \
+          ccache --max-size 2.5G \
             && ccache --set-config compiler_check=content \
             || echo "::warning::ccache not on PATH; cache tuning skipped"
 
@@ -293,14 +298,19 @@ jobs:
         run: |
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
-          # 3G per job = 9G across the three build jobs, still inside GitHub's 10GB
-          # per-repo cache budget with the venvs included. 2G sat pinned at 99.96%
-          # with 157 cleanups per run, i.e. ccache spent the build evicting itself.
+          # 2.5G per job. The measured working set is ~1.85G (Linux) / ~1.47G
+          # (macOS) and it does not grow with a bigger cap, but 2G sat pinned at
+          # 99.96% with 157 cleanups per run because the cap equalled the working
+          # set, so ccache spent the build evicting itself. 3x2.5G = 7.5G of the
+          # 10GB per-repo cache budget, leaving room for the venvs and for one
+          # previous generation; 3G left no headroom and usage hit 11.4G, which
+          # makes GitHub evict whichever generation is least recently used.
+          # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
           # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
           # compiler_check=content: a fresh runner reinstalls the compiler each run
           # (brew on macOS), and the default mtime check would treat an identical
           # compiler as new and miss the whole archive.
-          ccache --max-size 3G \
+          ccache --max-size 2.5G \
             && ccache --set-config compiler_check=content \
             || echo "::warning::ccache not on PATH; cache tuning skipped"
 
