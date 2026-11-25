@@ -110,9 +110,16 @@ jobs:
         run: |
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
-          # 2G per job keeps the repo inside GitHub's 10GB cache budget (3 build
-          # jobs + venvs). Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
-          ccache --max-size 2G || echo "::warning::ccache not on PATH; cache tuning skipped"
+          # 3G per job = 9G across the three build jobs, still inside GitHub's 10GB
+          # per-repo cache budget with the venvs included. 2G sat pinned at 99.96%
+          # with 157 cleanups per run, i.e. ccache spent the build evicting itself.
+          # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
+          # compiler_check=content: a fresh runner reinstalls the compiler each run
+          # (brew on macOS), and the default mtime check would treat an identical
+          # compiler as new and miss the whole archive.
+          ccache --max-size 3G \
+            && ccache --set-config compiler_check=content \
+            || echo "::warning::ccache not on PATH; cache tuning skipped"
 
       - name: Cache ccache
         uses: actions/cache@v6
@@ -143,6 +150,29 @@ jobs:
           sed -i.bak 's/\(LADYBIRD_BASELINE_CPU_TARGET .*\) OFF)/\1 ON)/' Meta/CMake/cmake_options.cmake
           grep -q 'LADYBIRD_BASELINE_CPU_TARGET .* ON)' Meta/CMake/cmake_options.cmake || {
             echo "::error::could not enable LADYBIRD_BASELINE_CPU_TARGET in Meta/CMake/cmake_options.cmake"
+            exit 1
+          }
+          # Tests are 481 of 3215 compile units and `cmake --install` installs none
+          # of them, so a release build was paying ~15% of its compile time for
+          # nothing - and the expensive ones, since Tests/LibWebView pulls in all of
+          # LibWeb. Root CMakeLists.txt gates add_subdirectory(Tests) on the standard
+          # CTest BUILD_TESTING entry; ladybird.py cannot forward -D (same reason as
+          # the option flip above), so force that cache entry in place and verify it.
+          python3 - <<'PY'
+          import pathlib, sys
+          p = pathlib.Path("CMakeLists.txt")
+          s = p.read_text()
+          marker = 'set(BUILD_TESTING OFF CACHE BOOL "" FORCE)'
+          if marker not in s:
+              needle = "\n    if (BUILD_TESTING)"
+              if needle not in s:
+                  sys.exit("error: BUILD_TESTING guard not found in CMakeLists.txt")
+              s = s.replace(needle, "\n    " + marker + needle, 1)
+              p.write_text(s)
+          print("BUILD_TESTING forced OFF")
+          PY
+          grep -q 'set(BUILD_TESTING OFF CACHE BOOL' CMakeLists.txt || {
+            echo "::error::could not disable BUILD_TESTING in CMakeLists.txt"
             exit 1
           }
           LOG="$RUNNER_TEMP/build.log"
@@ -263,9 +293,16 @@ jobs:
         run: |
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
-          # 2G per job keeps the repo inside GitHub's 10GB cache budget (3 build
-          # jobs + venvs). Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
-          ccache --max-size 2G || echo "::warning::ccache not on PATH; cache tuning skipped"
+          # 3G per job = 9G across the three build jobs, still inside GitHub's 10GB
+          # per-repo cache budget with the venvs included. 2G sat pinned at 99.96%
+          # with 157 cleanups per run, i.e. ccache spent the build evicting itself.
+          # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
+          # compiler_check=content: a fresh runner reinstalls the compiler each run
+          # (brew on macOS), and the default mtime check would treat an identical
+          # compiler as new and miss the whole archive.
+          ccache --max-size 3G \
+            && ccache --set-config compiler_check=content \
+            || echo "::warning::ccache not on PATH; cache tuning skipped"
 
       - name: Cache ccache
         uses: actions/cache@v6
@@ -298,7 +335,10 @@ jobs:
             # one part of that script usable in a root container. It also puts the
             # vcpkg toolchain file CMakeLists.txt requires in place.
             ./Meta/ladybird.py vcpkg --preset Release
+            # BUILD_TESTING=OFF: Tests/ is 481 of 3215 compile units and nothing
+            # under it is installed, so a release build should not pay for it.
             cmake --preset Release -DLADYBIRD_BASELINE_CPU_TARGET=ON \
+              -DBUILD_TESTING=OFF \
               -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
               -DPKG_CONFIG_EXECUTABLE="$(command -v pkg-config)"
             cmake --build --preset Release -j "$(nproc)"
