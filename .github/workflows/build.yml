@@ -110,12 +110,22 @@ jobs:
         run: |
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
+          # 2G per job keeps the repo inside GitHub's 10GB cache budget (3 build
+          # jobs + venvs). Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
+          ccache --max-size 2G || echo "::warning::ccache not on PATH; cache tuning skipped"
 
       - name: Cache ccache
         uses: actions/cache@v6
         with:
           path: ~/.ccache
-          key: ladybird-macos-arm64-ccache-${{ hashFiles('ladybird/vcpkg.json', 'ladybird/vcpkg-configuration.json') }}
+          # The key must MISS every run. actions/cache only saves on a primary-key
+          # miss, so the old vcpkg-derived key froze this archive at its first-save
+          # contents (834 MB on macOS vs 1.9 GB on Linux) and every object compiled
+          # by a later nightly died with the runner, which is why warm runs still
+          # took ~1h50m. run_id forces a save every run; restore-keys still brings
+          # back the newest snapshot, and the prefix matches the old keys so the
+          # existing archive is reused on the first run after this change.
+          key: ladybird-macos-arm64-ccache-${{ github.run_id }}
           restore-keys: |
             ladybird-macos-arm64-ccache-
 
@@ -160,6 +170,12 @@ jobs:
             fi
           done
           wait "$BUILD_PID"
+
+      - name: ccache stats
+        if: always()
+        # Visibility only: the hit rate is what tells us whether the cache is
+        # converging, so never let a ccache query fail an otherwise good build.
+        run: ccache --show-stats || true
 
       - name: Package .app bundle
         working-directory: ladybird
@@ -247,12 +263,17 @@ jobs:
         run: |
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
+          # 2G per job keeps the repo inside GitHub's 10GB cache budget (3 build
+          # jobs + venvs). Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
+          ccache --max-size 2G || echo "::warning::ccache not on PATH; cache tuning skipped"
 
       - name: Cache ccache
         uses: actions/cache@v6
         with:
           path: ~/.ccache
-          key: ladybird-linux-${{ matrix.arch }}-ccache-${{ hashFiles('ladybird/vcpkg.json', 'ladybird/vcpkg-configuration.json') }}
+          # Always-miss key: see the build-macos cache step for why the previous
+          # vcpkg-derived key froze the archive instead of letting it converge.
+          key: ladybird-linux-${{ matrix.arch }}-ccache-${{ github.run_id }}
           restore-keys: |
             ladybird-linux-${{ matrix.arch }}-ccache-
 
@@ -302,6 +323,12 @@ jobs:
           done
           wait "$BUILD_PID"
 
+      - name: ccache stats
+        if: always()
+        # Visibility only: the hit rate is what tells us whether the cache is
+        # converging, so never let a ccache query fail an otherwise good build.
+        run: ccache --show-stats || true
+
       - name: Package
         working-directory: ladybird
         run: |
@@ -336,18 +363,33 @@ jobs:
           ls -lh dist
 
       - name: Refuse to overwrite an existing release
+        id: guard
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           TAG="build-${{ needs.build-macos.outputs.date }}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::release $TAG already exists"
+          SHA="${{ needs.build-macos.outputs.sha }}"
+          # The release name carries the built commit: "Ladybird build <date> (<sha>)".
+          if NAME="$(gh release view "$TAG" --json name --jq .name 2>/dev/null)"; then
+            case "$NAME" in
+              *"($SHA)"*)
+                # Same date, same commit: a manual dispatch earlier today already
+                # published exactly this build. Overwriting is still forbidden, but
+                # this is not a failure - skipping keeps the nightly green instead of
+                # reporting a duplicate as a broken build.
+                echo "::notice::$TAG already published for $SHA - nothing to publish"
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+            esac
+            echo "::error::$TAG already exists for a different commit ($NAME) - refusing to overwrite"
             exit 1
           fi
           echo "no existing release $TAG - safe to publish"
 
       - name: Publish release
+        if: steps.guard.outputs.skip != 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: build-${{ needs.build-macos.outputs.date }}
@@ -364,6 +406,7 @@ jobs:
           make_latest: true
 
       - name: Prune old releases
+        if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -378,11 +421,13 @@ jobs:
               done
 
       - name: Checkout this repo for the flake pin
+        if: steps.guard.outputs.skip != 'true'
         uses: actions/checkout@v7
         with:
           path: self
 
       - name: Update flake pin
+        if: steps.guard.outputs.skip != 'true'
         working-directory: self
         run: |
           # Absolute: this step runs in self/, but dist/ is in the workspace root, so a
