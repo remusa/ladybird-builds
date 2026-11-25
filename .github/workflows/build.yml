@@ -5,6 +5,14 @@ on:
     - cron: "0 2 * * 0,3"
   workflow_dispatch:
     inputs:
+      builds:
+        description: "Which builds to run (partial runs never publish: a release needs all assets)"
+        type: choice
+        options:
+          - all
+          - macos-only
+          - linux-only
+        default: all
       selftest_failure:
         description: "Fail immediately, to test the failure notification (no build)"
         type: boolean
@@ -27,6 +35,9 @@ env:
 
 jobs:
   build-macos:
+    # Skipped by a linux-only dispatch, and vice versa below. Scheduled runs have
+    # no inputs, so they always build both.
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.builds != 'linux-only'
     runs-on: macos-15
     timeout-minutes: 240
     outputs:
@@ -110,19 +121,19 @@ jobs:
         run: |
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
-          # 2.5G per job. The measured working set is ~1.85G (Linux) / ~1.47G
-          # (macOS) and it does not grow with a bigger cap, but 2G sat pinned at
-          # 99.96% with 157 cleanups per run because the cap equalled the working
-          # set, so ccache spent the build evicting itself. 3x2.5G = 7.5G of the
-          # 10GB per-repo cache budget, leaving room for the venvs and for one
-          # previous generation; 3G left no headroom and usage hit 11.4G, which
-          # makes GitHub evict whichever generation is least recently used.
-          # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
+          # 2G, sized to the measured macOS working set (~1.47G) rather than to the
+          # budget. It does not grow with a bigger cap, but the original 2G sat
+          # pinned at 99.96% with 157 cleanups per run because the cap equalled the
+          # working set, so ccache spent the build evicting itself; that is what
+          # compiler_check below fixes, not a bigger cap. macOS 2G + Linux 2.5G x2
+          # = 7G per generation against the 10GB per-repo cache budget, leaving room
+          # for the venvs and one previous generation (3G each reached 11.4G and made
+          # GitHub evict the generation the next run needed).
           # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
           # compiler_check=content: a fresh runner reinstalls the compiler each run
           # (brew on macOS), and the default mtime check would treat an identical
           # compiler as new and miss the whole archive.
-          ccache --max-size 2.5G \
+          ccache --max-size 2G \
             && ccache --set-config compiler_check=content \
             || echo "::warning::ccache not on PATH; cache tuning skipped"
 
@@ -233,6 +244,7 @@ jobs:
           path: dist/Ladybird-macos-arm64.zip
 
   build-linux:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.builds != 'macos-only'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
     container: ghcr.io/ladybirdbrowser/ladybird-ci:2026.10.29
@@ -298,15 +310,9 @@ jobs:
         run: |
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
           mkdir -p "$HOME/.ccache"
-          # 2.5G per job. The measured working set is ~1.85G (Linux) / ~1.47G
-          # (macOS) and it does not grow with a bigger cap, but 2G sat pinned at
-          # 99.96% with 157 cleanups per run because the cap equalled the working
-          # set, so ccache spent the build evicting itself. 3x2.5G = 7.5G of the
-          # 10GB per-repo cache budget, leaving room for the venvs and for one
-          # previous generation; 3G left no headroom and usage hit 11.4G, which
-          # makes GitHub evict whichever generation is least recently used.
-          # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
-          # Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
+          # 2.5G, sized to the Linux working set (~1.85G) with slack, since a cap
+          # that merely equals the working set thrashes. Budget arithmetic lives in
+          # the macOS step. Upstream enables ccache by default (LADYBIRD_ENABLE_CCACHE).
           # compiler_check=content: a fresh runner reinstalls the compiler each run
           # (brew on macOS), and the default mtime check would treat an identical
           # compiler as new and miss the whole archive.
@@ -395,6 +401,11 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     needs: [build-macos, build-linux]
+    # A release carries all three assets and the flake pin is derived from the
+    # macOS zip, so publishing requires both platforms to have actually built.
+    # Without this, a skipped job leaves needs.*.outputs empty and the tag becomes
+    # "build-" with an empty commit in the name.
+    if: ${{ !cancelled() && needs.build-macos.result == 'success' && needs.build-linux.result == 'success' }}
     outputs:
       date: ${{ needs.build-macos.outputs.date }}
       sha: ${{ needs.build-macos.outputs.sha }}
