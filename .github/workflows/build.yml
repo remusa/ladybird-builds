@@ -481,6 +481,46 @@ jobs:
                 gh release delete "$tag" --yes --cleanup-tag
               done
 
+      - name: Prune superseded action caches
+        # Runs even when the publish guard skipped: the build jobs saved their
+        # archives either way, so the older generations are still stale.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # The per-repository cache budget is 10GB and one generation of ccache
+          # archives is ~6GB (macOS 1.9G + Linux 2.0G x2), so two generations sit on
+          # the ceiling and GitHub's own LRU eviction decides what to drop - which can
+          # take the generation the next nightly needs. Keep the newest cache per key
+          # prefix and delete the rest, so eviction never gets a say. venv keys end in
+          # a content hash instead of a run id, so each is its own prefix and is never
+          # pruned.
+          gh api --paginate "/repos/$GH_REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | "\(.id) \(.key)"' \
+            | python3 -c '
+          import re, sys
+          rows = [line.split(" ", 1) for line in sys.stdin.read().splitlines() if line]
+          def prefix_and_version(key):
+              m = re.match(r"^(.*?)-(\d+)$", key)
+              return (m.group(1), int(m.group(2))) if m else (key, 0)
+          newest = {}
+          for cid, key in rows:
+              prefix, version = prefix_and_version(key)
+              if prefix not in newest or version > newest[prefix][0]:
+                  newest[prefix] = (version, cid)
+          for cid, key in rows:
+              if newest[prefix_and_version(key)[0]][1] != cid:
+                  print(cid)
+          ' > "$RUNNER_TEMP/stale-caches.txt"
+          count=$(wc -l < "$RUNNER_TEMP/stale-caches.txt" | tr -d " ")
+          echo "pruning $count superseded cache entries"
+          while read -r id; do
+            [ -n "$id" ] || continue
+            gh api -X DELETE "/repos/$GH_REPO/actions/caches/$id" > /dev/null
+            echo "deleted cache id $id"
+          done < "$RUNNER_TEMP/stale-caches.txt"
+
       - name: Checkout this repo for the flake pin
         if: steps.guard.outputs.skip != 'true'
         uses: actions/checkout@v7
