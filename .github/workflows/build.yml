@@ -2,7 +2,7 @@ name: Build Ladybird (macOS arm64 + Linux)
 
 on:
   schedule:
-    - cron: "0 2 * * 0,3"
+    - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
       builds:
