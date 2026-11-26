@@ -24,7 +24,10 @@ permissions:
 
 env:
   LADYBIRD_REPO: LadybirdBrowser/ladybird
-  RELEASE_RETENTION: 20
+  # Nightly since 2026-11-25, so 30 keeps roughly a month of history (it was a
+  # 10-week window when the schedule was twice weekly). Only pruned on a run that
+  # actually publishes, so a stretch of refused duplicate-date runs will not trim.
+  RELEASE_RETENTION: 30
   LADYBIRD_REF: master
   # Upstream builds a content-addressed venv of requirements.txt mid-build
   # (Meta/Utils/python_environment.py). A single PyPI hiccup there fails the whole
