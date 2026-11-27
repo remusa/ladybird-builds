@@ -12,8 +12,8 @@
       pkgs = import nixpkgs { inherit system; };
 
       # --- Release pin. ---
-      # `releaseTag` is the release tag (build-YYYY-MM-DD), `version` its date
-      # part, and `hash` the SRI sha256 of that release's Ladybird-macos-arm64.zip.
+      # `releaseTag` is the upstream release tag (e.g. 2026.48.0), `version` its
+      # version, and `hash` the SRI sha256 of that release's Ladybird-macos-arm64.zip.
       #
       # The release job rewrites all three and commits them, so consumers only
       # need `nix flake update ladybird-builds`. Bump by hand if that step failed:

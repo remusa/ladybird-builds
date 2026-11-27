@@ -20,7 +20,7 @@ babysitting as upstream's build system changes.
   packages it (deploys Qt with `macdeployqt`, drops absolute rpaths,
   re-signs, verifies nothing points outside the bundle), and the resulting
   tarball is repacked into `Ladybird-macos-arm64.zip` and published as a
-  GitHub Release tagged `build-YYYY-MM-DD`. The build needs Qt 6.10+
+  GitHub Release tagged with the upstream version (e.g. `2026.48.0`). The build needs Qt 6.10+
   (Homebrew `qt`); the workflow selects the newest Xcode preinstalled on
   the runner itself.
 - `flake.nix` — a Nix flake that fetches the *prebuilt* binary from this
@@ -92,7 +92,7 @@ uses `fetchurl`, not `fetchzip`):
 
 ```sh
 nix store prefetch-file --json --hash-type sha256 \
-  https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/download/build-YYYY-MM-DD/Ladybird-macos-arm64.zip
+  https://github.com/YOUR_GH_USERNAME/ladybird-builds/releases/download/2026.48.0/Ladybird-macos-arm64.zip
 ```
 
 Only one release per UTC day can exist: the tag is the build date and the
