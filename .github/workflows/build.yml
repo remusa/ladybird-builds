@@ -21,6 +21,10 @@ on:
 permissions:
   contents: write
   issues: write
+  # Pruning superseded action caches deletes via the actions API, which the
+  # default token scope does not cover: without this the step runs, picks the
+  # right ids, and dies on `HTTP 403 Resource not accessible by integration`.
+  actions: write
 
 env:
   LADYBIRD_REPO: LadybirdBrowser/ladybird
