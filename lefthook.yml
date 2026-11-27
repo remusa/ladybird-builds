@@ -19,10 +19,12 @@ commit-msg:
   commands:
     conventional-commits:
       run: |
-        if [ -f ".git/COMMIT_EDITMSG" ]; then
-          MSG=$(cat .git/COMMIT_EDITMSG)
-        elif [ -f ".git/msg" ]; then
-          MSG=$(cat .git/msg)
+        MSG_FILE="{1}"
+        if [ -z "$MSG_FILE" ] || [ ! -f "$MSG_FILE" ]; then
+          MSG_FILE=".git/COMMIT_EDITMSG"
+        fi
+        if [ -f "$MSG_FILE" ]; then
+          MSG=$(cat "$MSG_FILE")
         else
           MSG=""
         fi
